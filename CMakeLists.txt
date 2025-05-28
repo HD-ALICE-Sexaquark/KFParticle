@@ -1,143 +1,95 @@
-cmake_minimum_required(VERSION 2.8.8 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.15...3.31)
+project(KFParticle LANGUAGES CXX)
 
-project(KFParticleLibrary)
+# prevent in-source builds #
+
+if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
+  message(FATAL_ERROR "You don't want to configure in the source directory!")
+endif()
+
+# c++ standard #
+
+set(CMAKE_CXX_EXTENSIONS OFF) # ensure -std=c++xx instead of -std=g++xx
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_FLAGS
+    "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wshadow -Wnon-virtual-dtor -march=native -mtune=native -O3"
+)
+
+# includes and macros #
+
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
 
 macro(add_target_property _target _prop _value)
   get_target_property(_oldprop "${_target}" ${_prop})
-  if(NOT _oldprop)
-    set_target_properties("${_target}" PROPERTIES ${_prop} "${_value}")
-  else(NOT _oldprop)
-    set_target_properties("${_target}" PROPERTIES ${_prop} "${_oldprop} ${_value}")
-  endif(NOT _oldprop)
-endmacro(add_target_property)
-
-if (CMAKE_VERSION VERSION_LESS "3.1")
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT ${CMAKE_CXX_FLAGS} MATCHES "-std=")
-  set (CMAKE_CXX_FLAGS "--std=gnu++11 ${CMAKE_CXX_FLAGS}")
-endif ()
-else ()
-  if (NOT DEFINED CMAKE_CXX_STANDARD AND NOT ${CMAKE_CXX_FLAGS} MATCHES "-std=")
-    set (CMAKE_CXX_STANDARD 11)
-  endif()
-endif ()
-
-list(APPEND CMAKE_PREFIX_PATH $ENV{ROOTSYS} ${ROOTSYS})
-
-set(FIXTARGET FALSE CACHE BOOL "Compile for fix target geometry.")
-
-find_package(ROOT REQUIRED COMPONENTS Core Hist Matrix Physics EG Gpad Graf Graf3d RIO MathCore)
-If(DEFINED Vc_INCLUDE_DIR AND Vc_LIBRARIES)
-  Message("Vc found")
-Else()
-  find_package(Vc REQUIRED)
-EndIf()
-
-Set(INCLUDE_DIRECTORIES
-  ${PROJECT_SOURCE_DIR}/KFParticle
-  ${PROJECT_SOURCE_DIR}/KFParticlePerformance
-)
-
-include(${ROOT_USE_FILE})
-set(CMAKE_INCLUDE_DIRECTORIES_BEFORE ON)
-Include_Directories( ${CMAKE_SOURCE_DIR} ${Vc_INCLUDE_DIR} ${INCLUDE_DIRECTORIES} )
-set(CMAKE_INCLUDE_DIRECTORIES_BEFORE OFF)
-
-set(LINK_DIRECTORIES
-  ${ROOT_LIBRARY_DIR}
-)
- 
-link_directories( ${LINK_DIRECTORIES})
-
-set (SOURCES
-  KFParticle/KFParticleTopoReconstructor.cxx
-  KFParticle/KFVertex.cxx
-  KFParticle/KFPTrack.cxx
-  KFParticle/KFPTrackVector.cxx
-  KFParticle/KFPVertex.cxx
-  KFParticle/KFParticlePVReconstructor.cxx
-  KFParticle/KFParticleDatabase.cxx
-  KFParticle/KFParticleBase.cxx
-  KFParticle/KFParticleBaseSIMD.cxx
-  KFParticle/KFParticle.cxx
-  KFParticle/KFParticleSIMD.cxx
-  KFParticle/KFParticleFinder.cxx
-  KFParticle/KFPEmcCluster.cxx
-  KFParticlePerformance/KFMCVertex.cxx
-  KFParticlePerformance/KFParticlePerformanceBase.cxx
-  KFParticlePerformance/KFTopoPerformance.cxx
-  KFParticlePerformance/KFMCParticle.cxx
-  KFParticleTest/KFParticleTest.cxx
-)
-
-set (HEADERS
-  KFParticle/KFParticleBase.h
-  KFParticle/KFParticle.h
-  KFParticle/KFVertex.h
-  KFParticlePerformance/KFPartEfficiencies.h
-  KFParticlePerformance/KFMCParticle.h
-  KFParticleTest/KFParticleTest.h
-)
-
-Message("CMAKE_BUILD_DIRECTORY: ${CMAKE_BUILD_DIRECTORY}")
-
-if(FIXTARGET)
-  ROOT_GENERATE_DICTIONARY(G__KFParticle ${HEADERS} LINKDEF KFLinkDef.h OPTIONS "-DDO_TPCCATRACKER_EFF_PERFORMANCE" "-DNonhomogeneousField" "-DCBM" "-DUSE_TIMERS")
-
-  find_program(BIN_SED sed)
-  if(BIN_SED)
-    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/G__KFParticle_mod.cxx
-                       COMMAND sed -e "s#${CMAKE_SOURCE_DIR}/##g" ${CMAKE_BINARY_DIR}/G__KFParticle.cxx > ${CMAKE_BINARY_DIR}/G__KFParticle_mod.cxx
-                       DEPENDS ${CMAKE_BINARY_DIR}/G__KFParticle.cxx
-                      )
+  if(_oldprop)
+    set_target_properties("${_target}" PROPERTIES ${_prop}
+                                                  "${_oldprop} ${_value}")
   else()
-    Message("Can't correct KFParticle dictionary. Running KFParticle from an installed CbmRoot will not be possible")
+    set_target_properties("${_target}" PROPERTIES ${_prop} "${_value}")
   endif()
+endmacro()
 
-#  set(SourceFile "${CMAKE_BINARY_DIR}/G__KFParticle.cxx")
-#  set(SourceFile_new "${CMAKE_BINARY_DIR}/G__KFParticle_mod.cxx")
-#  file(READ ${SourceFile} Contents)
-#  STRING(REGEX REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/" "" Contents_Modified "${Contents}" )
-#  file(WRITE ${SourceFile_new} ${Contents_Modified})
+# some definitions #
 
-  add_library(KFParticle SHARED ${SOURCES} G__KFParticle_mod.cxx)
-  target_link_libraries(KFParticle ${ROOT_LIBRARIES} ${Vc_LIBRARIES} )
-  add_target_property(KFParticle COMPILE_FLAGS "-DDO_TPCCATRACKER_EFF_PERFORMANCE -DNonhomogeneousField -DCBM -DUSE_TIMERS")
-else(FIXTARGET)
-  ROOT_GENERATE_DICTIONARY(G__KFParticle ${HEADERS} LINKDEF KFLinkDef.h OPTIONS "-DDO_TPCCATRACKER_EFF_PERFORMANCE" "-DHomogeneousField" "-DUSE_TIMERS")
-  add_library(KFParticle SHARED ${SOURCES} G__KFParticle.cxx)
-  target_link_libraries(KFParticle ${ROOT_LIBRARIES} ${Vc_LIBRARIES} )
-  add_target_property(KFParticle COMPILE_FLAGS "-DDO_TPCCATRACKER_EFF_PERFORMANCE -DHomogeneousField -DUSE_TIMERS")
-endif(FIXTARGET)
+set(SOURCES
+    KFParticle/KFVertex.cxx KFParticle/KFPTrack.cxx KFParticle/KFPVertex.cxx
+    KFParticle/KFParticleBase.cxx KFParticle/KFParticle.cxx)
+set(HEADERS KFParticle/KFParticleBase.h KFParticle/KFParticle.h
+            KFParticle/KFVertex.h)
+set(NODICT_HEADERS KFParticle/KFPVertex.h KFParticle/KFPTrack.h)
 
-if (ROOT_VERSION_MAJOR LESS 6)
-    add_custom_target(libKFParticle.rootmap ALL DEPENDS KFParticle COMMAND rlibmap -o libKFParticle.rootmap -l libKFParticle.so -c ${PROJECT_SOURCE_DIR}/KFLinkDef.h)
-endif (ROOT_VERSION_MAJOR LESS 6)
+# main target #
 
-Set(NODICT_HEADERS
-  KFParticle/KFParticleTopoReconstructor.h
-  KFParticle/KFParticlePVReconstructor.h
-  KFParticle/KFPVertex.h
-  KFParticle/KFPTrack.h
-  KFParticle/KFParticleFinder.h
-  KFParticle/KFParticleSIMD.h
-  KFParticle/KFParticleBaseSIMD.h
-  KFParticle/KFParticleDef.h
-  KFParticle/KFPSimdAllocator.h
-  KFParticle/KFPTrackVector.h
-  KFParticle/KFPEmcCluster.h
-  KFParticle/KFParticleField.h
-  KFParticle/KFPTrackVector.h
-  KFParticle/KFParticleDatabase.h
-  KFParticlePerformance/KFTopoPerformance.h
-  KFParticlePerformance/KFParticlePerformanceBase.h
-  KFParticlePerformance/KFMCCounter.h
-  KFParticlePerformance/KFPVEfficiencies.h
-  KFParticlePerformance/KFMCVertex.h
-  KFParticlePerformance/KFMCTrack.h
-  KFParticlePerformance/KFPartMatch.h
-)
+add_library(KFParticle SHARED ${SOURCES})
+target_include_directories(
+  KFParticle
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
+         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+target_compile_features(KFParticle PUBLIC cxx_std_17)
+add_target_property(KFParticle COMPILE_FLAGS "-DHomogeneousField")
 
-install(FILES ${HEADERS} ${NODICT_HEADERS} DESTINATION include)
-install(FILES ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}KFParticle_rdict.pcm DESTINATION lib OPTIONAL)
-install(FILES ${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}KFParticle.rootmap DESTINATION lib)
-install(TARGETS KFParticle DESTINATION lib)
+option(KF_DEBUG "Print debug messages." ON)
+if(KF_DEBUG)
+  add_target_property(KFParticle COMPILE_FLAGS "-DKF_DEBUG")
+endif(KF_DEBUG)
+
+# installation of library and headers #
+
+install(
+  TARGETS KFParticle
+  EXPORT ${PROJECT_NAME}Targets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  INCLUDES
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(FILES ${HEADERS} ${NODICT_HEADERS}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+# installation of package config #
+
+configure_package_config_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
+
+install(
+  EXPORT ${PROJECT_NAME}Targets
+  NAMESPACE ${PROJECT_NAME}::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+  EXPORT_LINK_INTERFACE_LIBRARIES)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
+
+# (optional) enable library from build tree #
+
+export(
+  EXPORT ${PROJECT_NAME}Targets
+  NAMESPACE ${PROJECT_NAME}::
+  FILE ${PROJECT_NAME}Targets.cmake)

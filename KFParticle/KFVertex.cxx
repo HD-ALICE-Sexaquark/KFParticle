@@ -22,24 +22,20 @@
 
 #include "KFVertex.h"
 
-#ifndef KFParticleStandalone
-ClassImp(KFVertex);
-#endif
-
 KFVertex::KFVertex( const KFPVertex &vertex ): fIsConstrained(0)
 {
   /** Constructor from KFPVertex. **/
 
   vertex.GetXYZ( fP );
-  vertex.GetCovarianceMatrix( fC );  
-  fChi2 = vertex.GetChi2();  
+  vertex.GetCovarianceMatrix( fC );
+  fChi2 = vertex.GetChi2();
   fNDF = 2*vertex.GetNContributors() - 3;
   fQ = 0;
   fAtProductionVertex = 0;
   fSFromDecay = 0;
 }
 
-void KFVertex::SetBeamConstraint( float x, float y, float z, 
+void KFVertex::SetBeamConstraint( float x, float y, float z,
                                   float errX, float errY, float errZ )
 {
   /** Sets a soft beam constraint on the vertex position.
@@ -64,11 +60,11 @@ void KFVertex::SetBeamConstraintOff()
   fIsConstrained = 0;
 }
 
-void KFVertex::ConstructPrimaryVertex( const KFParticle *vDaughters[], 
-                                       int nDaughters, Bool_t vtxFlag[],
+void KFVertex::ConstructPrimaryVertex( const KFParticle *vDaughters[],
+                                       int nDaughters, bool vtxFlag[],
                                        float ChiCut  )
 {
-  /** Reconstructs the primary vertex from a set of particles. Reconstruction is 
+  /** Reconstructs the primary vertex from a set of particles. Reconstruction is
    ** parformed in three steps:\n
    ** 1) vertex seed is constructed from all particles; \n
    ** 2) if particle deviates more then on the "ChiCut" it is rejected; \n
@@ -76,7 +72,7 @@ void KFVertex::ConstructPrimaryVertex( const KFParticle *vDaughters[],
    ** Rejected particles are marked with "false" in the output array of flags.
    ** \param[in] vDaughters - input array of pointers to the particles
    ** \param[in] nDaughters - number of particles in the input array
-   ** \param[out] vtxFlag - array of flags showing if particle was used in the 
+   ** \param[out] vtxFlag - array of flags showing if particle was used in the
    ** vertex fit, if yes - set to "true"
    ** \param[in] ChiCut - cut on the chi2-deviation of the particle from the created
    ** seed, by default the cut is set to 3.5
@@ -92,17 +88,17 @@ void KFVertex::ConstructPrimaryVertex( const KFParticle *vDaughters[],
 
   for( int i=0; i<nDaughters; i++ ) vtxFlag[i] = 1;
 
-  Int_t nRest = nDaughters;
+  int nRest = nDaughters;
 //   while( nRest>2 )
-//   {    
+//   {
 //     float worstChi = 0.;
-//     Int_t worstDaughter = 0;
-//     for( Int_t it=0; it<nDaughters; it++ ){
-//       if( !vtxFlag[it] ) continue;        
+//     int worstDaughter = 0;
+//     for( int it=0; it<nDaughters; it++ ){
+//       if( !vtxFlag[it] ) continue;
 //       const KFParticle &p = *(vDaughters[it]);
 //       //KFVertex tmp = *this - p;
-//       //float chi = p.GetDeviationFromVertex( tmp );      
-//       float chi = p.GetDeviationFromVertex( *this );      
+//       //float chi = p.GetDeviationFromVertex( tmp );
+//       float chi = p.GetDeviationFromVertex( *this );
 //       if( worstChi < chi ){
 //         worstChi = chi;
 //         worstDaughter = it;
@@ -110,21 +106,21 @@ void KFVertex::ConstructPrimaryVertex( const KFParticle *vDaughters[],
 //     }
 //     if( worstChi < ChiCut ) break;
 //       std::cout <<"worst 1 " <<  worstDaughter << " " << worstChi << std::endl;
-//     vtxFlag[worstDaughter] = 0;    
+//     vtxFlag[worstDaughter] = 0;
 //     //*this -= *(vDaughters[worstDaughter]);
 //     nRest--;
-//   } 
+//   }
 
-  for( Int_t it=0; it<nDaughters; it++ ){
+  for( int it=0; it<nDaughters; it++ ){
     const KFParticle &p = *(vDaughters[it]);
-    float chi = p.GetDeviationFromVertex( *this );      
+    float chi = p.GetDeviationFromVertex( *this );
     if( chi >= ChiCut ){
-      vtxFlag[it] = 0;    
+      vtxFlag[it] = 0;
       nRest--;
     }
   }
 
-  if( nRest>=2 ) {// final refit     
+  if( nRest>=2 ) {// final refit
 //     SetVtxGuess( fP[0], fP[1], fP[2] );
     if( fIsConstrained ){
       fP[0] = constrP[0];

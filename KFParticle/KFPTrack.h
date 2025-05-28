@@ -35,11 +35,7 @@
  **/
 
 #include <cmath>
-#include "TObject.h"
-class KFPTrack 
-#ifdef __ROOT__
-: public TObject
-#endif
+class KFPTrack
 {
 
 public:
@@ -47,8 +43,8 @@ public:
   virtual ~KFPTrack() { }
 
   int    GetID() const { return fId; } ///< Returns Id of the track.
-  
-  bool   GetXYZPxPyPz(float *p) const 
+
+  bool   GetXYZPxPyPz(float *p) const
   {
     /** Fills an array p with the parameters of the track.
      ** \param[out] p - array where { X, Y, Z, Px, Py, Pz } are copied
@@ -118,7 +114,7 @@ public:
   const float * GetTrack() const { return fP; }     ///< Returns a pointer to the array of track parameters.
   const float * GetCovMatrix() const { return fC; } ///< Returns a pointer to the array of the covariance matrix elements stored in a lower triangular form.
 
-  void SetParameters(const float *position) 
+  void SetParameters(const float *position)
   {
     /** Sets parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of floats.
      ** \param[in] position - input array with the track parameters
@@ -126,16 +122,16 @@ public:
     for(int i=0; i<6; i++)
       fP[i] = position[i];
   }
-  void SetParameters(double *position) 
-  { 
+  void SetParameters(double *position)
+  {
     /** Sets parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of doubles.
      ** \param[in] position - input array with the track parameters
      **/
     for(int i=0; i<6; i++)
       fP[i] = position[i];
   }
-  void SetParameters(float x, float y, float z, float px, float py, float pz) 
-  { 
+  void SetParameters(float x, float y, float z, float px, float py, float pz)
+  {
     /** Sets parameters { X, Y, Z, Px, Py, Pz } of the track.
      ** \param[in] x - X coordinate to be set
      ** \param[in] y - Y coordinate to be set
@@ -147,8 +143,8 @@ public:
     fP[0] = x;  fP[1] = y;  fP[2] = z;
     fP[3] = px; fP[4] = py; fP[5] = pz;
   }
-  void SetXYZ(float x, float y, float z) 
-  { 
+  void SetXYZ(float x, float y, float z)
+  {
     /** Sets position { X, Y, Z } of the track.
      ** \param[in] x - X coordinate to be set
      ** \param[in] y - Y coordinate to be set
@@ -156,8 +152,8 @@ public:
      **/
     fP[0] = x;  fP[1] = y;  fP[2] = z;
   }
-  void SetPxPyPz(float px, float py, float pz) 
-  { 
+  void SetPxPyPz(float px, float py, float pz)
+  {
     /** Sets momentum { Px, Py, Pz } of the track.
      ** \param[in] Px - Px momentum component to be set
      ** \param[in] Py - Py momentum component to be set
@@ -193,10 +189,10 @@ public:
     for (int i=0; i<21; i++)
       fC[i] = C[i];
   }
-  
+
   /** Sets an element of the covariance matrix with index "i". \param[in] c - value to be set \param[in] i - index of the element */
-  void SetCovariance(const int i, const float c) { fC[i]=c; } 
-  
+  void SetCovariance(const int i, const float c) { fC[i]=c; }
+
   void RotateXY( float alpha ); // rotate on alpha in XY plane. Should be useful for CS change
 
   int Id() const { return fId; }    ///< Returns Id of the track.
@@ -205,7 +201,7 @@ public:
 #ifdef NonhomogeneousField
   const float* GetFieldCoeff() const { return fieldRegion; } ///< Returns array of the coefficients for field approximation.
   /** Sets a field coefficient with index "i". \param[in] c - value to be set \param[in] i - index of the element */
-  void SetFieldCoeff(float c, int i) { fieldRegion[i] = c; } 
+  void SetFieldCoeff(float c, int i) { fieldRegion[i] = c; }
 #endif
  private:
 
@@ -215,15 +211,12 @@ public:
   char fQ;      ///< Charge of the track.
   short fNDF;   ///< Number of degree of freedom of the fit.
   int fId;      ///< Id of the track.
-  
+
 #ifdef NonhomogeneousField
   /** \brief Approximation of the magnetic field along the track trajectory.
    ** Each component (Bx, By, Bz) is approximated with the parabola depending on Z coordinate. Is defined in case of #ifdef NonhomogeneousField.
    **/
   float fieldRegion[10];
-#endif
-#ifdef __ROOT__
-  ClassDef(KFPTrack,1)
 #endif
 };
 
