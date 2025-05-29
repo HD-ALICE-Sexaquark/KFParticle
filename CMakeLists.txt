@@ -33,11 +33,8 @@ endmacro()
 
 # some definitions #
 
-set(SOURCES
-    KFParticle/KFVertex.cxx KFParticle/KFPTrack.cxx KFParticle/KFPVertex.cxx
-    KFParticle/KFParticleBase.cxx KFParticle/KFParticle.cxx)
-set(HEADERS KFParticle/KFParticleBase.h KFParticle/KFParticle.h
-            KFParticle/KFVertex.h)
+set(SOURCES KFParticle/KFVertex.cxx KFParticle/KFParticleBase.cxx)
+set(HEADERS KFParticle/KFParticleBase.h KFParticle/KFVertex.h)
 set(NODICT_HEADERS KFParticle/KFPVertex.h KFParticle/KFPTrack.h)
 
 # main target #
@@ -49,9 +46,8 @@ target_include_directories(
          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_features(KFParticle PUBLIC cxx_std_17)
-add_target_property(KFParticle COMPILE_FLAGS "-DHomogeneousField")
 
-option(KF_DEBUG "Print debug messages." ON)
+option(KF_DEBUG "Print debug messages." OFF)
 if(KF_DEBUG)
   add_target_property(KFParticle COMPILE_FLAGS "-DKF_DEBUG")
 endif(KF_DEBUG)

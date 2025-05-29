@@ -24,7 +24,7 @@
 
 // @class KFPVertex
 // @brief A scalar class for storage of the vertex in the cartesian parametrisation.
-// @author  M.Zyzak, I.Kisel
+// @author M.Zyzak, I.Kisel
 // @date 05.02.2019
 // @version 1.0
 //
@@ -36,8 +36,11 @@
 // to the KF Particle package.
 class KFPVertex {
    public:
-    KFPVertex();
-    virtual ~KFPVertex() {}
+    KFPVertex() : fChi2{-1.}, fNContributors{0}, fNDF{-1} {
+        for (int iP = 0; iP < 3; ++iP) fP[iP] = 0;
+        for (int iC = 0; iC < 6; ++iC) fC[iC] = 0;
+    }
+    ~KFPVertex() = default;
 
     float GetX() const { return fP[0]; }  // return X coordinate of the vertex
     float GetY() const { return fP[1]; }  // return Y coordinate of the vertex
@@ -60,12 +63,12 @@ class KFPVertex {
     // Copy the covariance matrix of the vertex to the array of floats.
     // \param[out] covmatrix[6] - the output array, where the covariance matrix is copied
     void GetCovarianceMatrix(float *covmatrix) const {
-        for (int i = 0; i < 6; i++) covmatrix[i] = fC[i];
+        for (int i = 0; i < 6; ++i) covmatrix[i] = fC[i];
     }
     // Copy the covariance matrix of the vertex to the array of doubles.
     // \param[out] covmatrix[6] - the output array, where the covariance matrix is copied
     void GetCovarianceMatrix(double *covmatrix) const {
-        for (int i = 0; i < 6; i++) covmatrix[i] = fC[i];
+        for (int i = 0; i < 6; ++i) covmatrix[i] = fC[i];
     }
 
     float GetChi2perNDF() const { return fChi2 / fNDF; }     // return Chi2/NDF of the vertex, NDF is a number of degrees of freedom
@@ -106,7 +109,7 @@ class KFPVertex {
     // set the covariance matrix from the input array of floats.
     // \param[in] C[6] - array with the input elements of the covariance matrix stored in the lower triangular form
     void SetCovarianceMatrix(float *C) {
-        for (int i = 0; i < 6; i++) fC[i] = C[i];
+        for (int i = 0; i < 6; ++i) fC[i] = C[i];
     }
 
     // set the covariance matrix from the input array of floats.

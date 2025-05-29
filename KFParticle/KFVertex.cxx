@@ -47,7 +47,7 @@ void KFVertex::SetBeamConstraint(float x, float y, float z, float errX, float er
     fIsConstrained = 1;
 }
 
-// Switches off the constraint. Should be called before KFVertex::ConstructPrimaryVertex() //
+// Switches off the constraint. Should be called before KFVertex::ConstructPrimaryVertex()
 void KFVertex::SetBeamConstraintOff() { fIsConstrained = 0; }
 
 // Reconstructs the primary vertex from a set of particles. Reconstruction is
@@ -62,17 +62,17 @@ void KFVertex::SetBeamConstraintOff() { fIsConstrained = 0; }
 // vertex fit, if yes - set to "true"
 // \param[in] ChiCut - cut on the chi2-deviation of the particle from the created
 // seed, by default the cut is set to 3.5
-void KFVertex::ConstructPrimaryVertex(const KFParticle *vDaughters[], int nDaughters, bool vtxFlag[], float ChiCut) {
+void KFVertex::ConstructPrimaryVertex(float bz, const KFParticleBase *vDaughters[], int nDaughters, bool vtxFlag[], float ChiCut) {
 
     if (nDaughters < 2) return;
     float constrP[3] = {fP[0], fP[1], fP[2]};
     float constrC[6] = {fC[0], fC[1], fC[2], fC[3], fC[4], fC[5]};
 
-    Construct(vDaughters, nDaughters, 0, -1);
+    Construct(bz, vDaughters, nDaughters, 0, -1);
 
     //   SetVtxGuess( fVtxGuess[0], fVtxGuess[1], fVtxGuess[2] );
 
-    for (int i = 0; i < nDaughters; i++) vtxFlag[i] = 1;
+    for (int i = 0; i < nDaughters; ++i) vtxFlag[i] = 1;
 
     int nRest = nDaughters;
     //   while( nRest>2 )
@@ -97,12 +97,12 @@ void KFVertex::ConstructPrimaryVertex(const KFParticle *vDaughters[], int nDaugh
     //     nRest--;
     //   }
 
-    for (int it = 0; it < nDaughters; it++) {
-        const KFParticle &p = *(vDaughters[it]);
-        float chi = p.GetDeviationFromVertex(*this);
+    for (int it = 0; it < nDaughters; ++it) {
+        const KFParticleBase &p = *(vDaughters[it]);
+        float chi = 0;  // p.GetDeviationFromVertex(bz, *this); // PENDING
         if (chi >= ChiCut) {
             vtxFlag[it] = 0;
-            nRest--;
+            --nRest;
         }
     }
 
@@ -112,19 +112,19 @@ void KFVertex::ConstructPrimaryVertex(const KFParticle *vDaughters[], int nDaugh
             fP[0] = constrP[0];
             fP[1] = constrP[1];
             fP[2] = constrP[2];
-            for (int i = 0; i < 6; i++) fC[i] = constrC[i];
+            for (int i = 0; i < 6; ++i) fC[i] = constrC[i];
         }
         int nDaughtersNew = 0;
-        const KFParticle **vDaughtersNew = new const KFParticle *[nDaughters];
-        for (int i = 0; i < nDaughters; i++) {
+        const KFParticleBase **vDaughtersNew = new const KFParticleBase *[nDaughters];
+        for (int i = 0; i < nDaughters; ++i) {
             if (vtxFlag[i]) vDaughtersNew[nDaughtersNew++] = vDaughters[i];
         }
-        Construct(vDaughtersNew, nDaughtersNew, 0, -1);
+        Construct(bz, vDaughtersNew, nDaughtersNew, 0, -1);
         if (vDaughtersNew) delete[] vDaughtersNew;
     }
 
     if (nRest <= 2 && GetChi2() > ChiCut * ChiCut * GetNDF()) {
-        for (int i = 0; i < nDaughters; i++) vtxFlag[i] = 0;
+        for (int i = 0; i < nDaughters; ++i) vtxFlag[i] = 0;
         fNDF = -3;
         fChi2 = 0;
     }

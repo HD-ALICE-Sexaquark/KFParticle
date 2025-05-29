@@ -36,66 +36,64 @@
 // the unique Id of the track and the field approximation along the track trajectory.
 class KFPTrack {
    public:
-    KFPTrack() : fChi2(-1.f), fQ(0), fNDF(-1), fId(-1) {}
-    virtual ~KFPTrack() {}
+    KFPTrack() : fChi2{-1.}, fQ{0}, fNDF{-1} {}
+    ~KFPTrack() = default;
 
-    int GetID() const { return fId; }  // return Id of the track
-
-    // Fills an array p with the parameters of the track.
+    // Fill an array p with the parameters of the track.
     // \param[out] p - array where { X, Y, Z, Px, Py, Pz } are copied
     bool GetXYZPxPyPz(float *p) const {
-        for (int i = 0; i < 6; i++) p[i] = fP[i];
+        for (int i = 0; i < 6; ++i) p[i] = fP[i];
         return 1;
     }
-    // Copies the covariance matrix of the track to the array of floats.
+    // Copy the covariance matrix of the track to the array of floats.
     // \param[out] cv[21] - the output array, where the covariance matrix is copied
     bool GetCovarianceXYZPxPyPz(float cv[21]) const {
-        for (int i = 0; i < 21; i++) cv[i] = fC[i];
+        for (int i = 0; i < 21; ++i) cv[i] = fC[i];
         return 1;
     }
-    // Copies the covariance matrix of the track to the array of doubles.
+    // Copy the covariance matrix of the track to the array of doubles.
     // \param[out] cv[21] - the output array, where the covariance matrix is copied
     bool GetCovarianceXYZPxPyPz(double cv[21]) const {
-        for (int i = 0; i < 21; i++) cv[i] = fC[i];
+        for (int i = 0; i < 21; ++i) cv[i] = fC[i];
         return 1;
     }
 
-    // Copies position of the track to the output array of floats.
+    // Copy position of the track to the output array of floats.
     // \param[out] position - the output array with the position of the track
     void GetXYZ(float *position) const {
         position[0] = fP[0];
         position[1] = fP[1];
         position[2] = fP[2];
     }
-    // Copies 3 momentum components of the track to the output array of floats.
+    // Copy 3 momentum components of the track to the output array of floats.
     // \param[out] position - the output array with the momentum of the track
     void GetPxPyPz(float *position) const {
         position[0] = fP[3];
         position[1] = fP[4];
         position[2] = fP[5];
     }
-    // Copies position of the track to the output array of floats.
+    // Copy position of the track to the output array of floats.
     // \param[out] position - the output array with the position of the track
     void XvYvZv(float *position) const {
         position[0] = fP[0];
         position[1] = fP[1];
         position[2] = fP[2];
     }
-    // Copies 3 momentum components of the track to the output array of floats.
+    // Copy 3 momentum components of the track to the output array of floats.
     // \param[out] position - the output array with the momentum of the track
     void PxPyPz(float *position) const {
         position[0] = fP[3];
         position[1] = fP[4];
         position[2] = fP[5];
     }
-    // Copies position of the track to the output array of doubles.
+    // Copy position of the track to the output array of doubles.
     // \param[out] position - the output array with the position of the track
     void XvYvZv(double *position) const {
         position[0] = fP[0];
         position[1] = fP[1];
         position[2] = fP[2];
     }
-    // Copies 3 momentum components of the track to the output array of doubles.
+    // Copy 3 momentum components of the track to the output array of doubles.
     // \param[out] position - the output array with the momentum of the track
     void PxPyPz(double *position) const {
         position[0] = fP[3];
@@ -113,10 +111,10 @@ class KFPTrack {
     float GetPt() const { return std::sqrt(fP[3] * fP[3] + fP[4] * fP[4]); }                 // return Pt - transverse momentum of the track
     float GetP() const { return std::sqrt(fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]); }  // return P - momentum of the track
 
-    // Copies the covariance matrix of the track to the array of floats
+    // Copy the covariance matrix of the track to the array of floats
     // \param[out] covmatrix[21] - the output array, where the covariance matrix is copied
     void GetCovarianceMatrix(float *covmatrix) {
-        for (int i = 0; i < 21; i++) covmatrix[i] = fC[i];
+        for (int i = 0; i < 21; ++i) covmatrix[i] = fC[i];
     }
     float GetParameter(int i) const { return fP[i]; }  // return parameter "i" of the track. \param[in] i - index of the parameter to be returned
 
@@ -128,20 +126,20 @@ class KFPTrack {
     float GetChi2() const { return fChi2; }               // return Chi2 of the track
     int GetNDF() const { return fNDF; }                   // return number of degrees of freedom of the track
 
-    const float *GetTrack() const { return fP; }  // return a pointer to the array of track parameters
-    const float *GetCovMatrix() const {
-        return fC;
-    }  // return a pointer to the array of the covariance matrix elements stored in a lower triangular form
+    // return a pointer to the array of track parameters
+    const float *GetTrack() const { return fP; }
+    // return a pointer to the array of the covariance matrix elements stored in a lower triangular form
+    const float *GetCovMatrix() const { return fC; }
 
+    // set parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of floats
+    // \param[in] position - input array with the track parameters
     void SetParameters(const float *position) {
-        // set parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of floats
-        // \param[in] position - input array with the track parameters
-        for (int i = 0; i < 6; i++) fP[i] = position[i];
+        for (int i = 0; i < 6; ++i) fP[i] = position[i];
     }
+    // set parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of doubles
+    // \param[in] position - input array with the track parameters
     void SetParameters(double *position) {
-        // set parameters { X, Y, Z, Px, Py, Pz } of the track from the input array of doubles
-        // \param[in] position - input array with the track parameters
-        for (int i = 0; i < 6; i++) fP[i] = position[i];
+        for (int i = 0; i < 6; ++i) fP[i] = position[i];
     }
 
     // set parameters { X, Y, Z, Px, Py, Pz } of the track.
@@ -177,7 +175,6 @@ class KFPTrack {
         fP[4] = py;
         fP[5] = pz;
     }
-    void SetID(int id) { fId = id; }  // set Id of the track
 
     void SetX(float x) { fP[0] = x; }         // set X coordinate of the track
     void SetY(float y) { fP[1] = y; }         // set Y coordinate of the track
@@ -189,43 +186,28 @@ class KFPTrack {
     void SetChi2(float chi) { fChi2 = chi; }  // set a value of the track Chi2
     void SetNDF(int ndf) { fNDF = ndf; }      // set a value of the number of degrees of freedom
 
+    // set the covariance matrix from the input array of floats.
+    // \param[in] C[21] - array with the input elements of the covariance matrix stored in the lower triangular form
     void SetCovarianceMatrix(const float *C) {
-        // set the covariance matrix from the input array of floats.
-        // \param[in] C[21] - array with the input elements of the covariance matrix stored in the lower triangular form
-        for (int i = 0; i < 21; i++) fC[i] = C[i];
+        for (int i = 0; i < 21; ++i) fC[i] = C[i];
     }
+    // set the covariance matrix from the input array of doubles.
+    // \param[in] C[21] - array with the input elements of the covariance matrix stored in the lower triangular form
     void SetCovarianceMatrix(const double *C) {
-        // set the covariance matrix from the input array of doubles.
-        // \param[in] C[21] - array with the input elements of the covariance matrix stored in the lower triangular form
-        for (int i = 0; i < 21; i++) fC[i] = C[i];
+        for (int i = 0; i < 21; ++i) fC[i] = C[i];
     }
 
-    // set an element of the covariance matrix with index "i". \param[in] c - value to be set \param[in] i - index of the element */
+    // set an element of the covariance matrix with index "i".
+    // \param[in] c - value to be set
+    // \param[in] i - index of the element
     void SetCovariance(const int i, const float c) { fC[i] = c; }
 
-    void RotateXY(float alpha);  // rotate on alpha in XY plane. Should be useful for CS change
-
-    int Id() const { return fId; }    // return Id of the track.
-    void SetId(int id) { fId = id; }  // set Id of the track.
-
-#ifdef NonhomogeneousField
-    const float *GetFieldCoeff() const { return fieldRegion; }  // return array of the coefficients for field approximation.
-    // set a field coefficient with index "i". \param[in] c - value to be set \param[in] i - index of the element */
-    void SetFieldCoeff(float c, int i) { fieldRegion[i] = c; }
-#endif
    private:
     float fP[6];   // Parameters of the track: { X, Y, Z, Px, Py, Pz }
     float fC[21];  // Covariance matrix of the track parameters Stored in the lower triangular form
     float fChi2;   // Chi-square of the track fit
     char fQ;       // Charge of the track
     short fNDF;    // Number of degree of freedom of the fit
-    int fId;       // Id of the track
-
-#ifdef NonhomogeneousField
-    // \brief Approximation of the magnetic field along the track trajectory.
-    // Each component (Bx, By, Bz) is approximated with the parabola depending on Z coordinate. Is defined in case of #ifdef NonhomogeneousField.
-    float fieldRegion[10];
-#endif
 };
 
 #endif
