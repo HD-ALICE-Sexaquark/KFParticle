@@ -33,9 +33,8 @@ endmacro()
 
 # some definitions #
 
-set(SOURCES KFParticle/KFVertex.cxx KFParticle/KFParticleBase.cxx)
-set(HEADERS KFParticle/KFParticleBase.h KFParticle/KFVertex.h)
-set(NODICT_HEADERS KFParticle/KFPVertex.h KFParticle/KFPTrack.h)
+set(SOURCES KFParticle/KFParticle.cxx)
+set(HEADERS KFParticle/KFParticle.h)
 
 # main target #
 
@@ -63,8 +62,7 @@ install(
   INCLUDES
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(FILES ${HEADERS} ${NODICT_HEADERS}
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 # installation of package config #
 

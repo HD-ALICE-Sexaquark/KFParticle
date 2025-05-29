@@ -26,24 +26,23 @@
 #include <cmath>
 #include <iostream>
 
-#include "KFPTrack.h"
-
 constexpr float kCLight{0.000299792458};
 constexpr float LocalSmall{1.E-8};
 
-// @class KFParticleBase
+// @class KFParticle
 // @brief The base of KFParticle class, describes particle objects.
 // @author S.Gorbunov, I.Kisel, M.Zyzak
 // @date 05.02.2019
 // @version 1.0
 //
 // Contains the main mathematics of the KFParticle.
-class alignas(32) KFParticleBase {
+class alignas(32) KFParticle {
    public:
-    KFParticleBase() : fChi2{0}, fNDF{-3}, fSFromDecay{0}, fSumDaughterMass{0}, fMassHypo{-1}, fAtProductionVertex{0}, fQ{0}, fConstructMethod{0} {
+    KFParticle() : fChi2{0}, fNDF{-3}, fSFromDecay{0}, fSumDaughterMass{0}, fMassHypo{-1}, fAtProductionVertex{0}, fQ{0}, fConstructMethod{0} {
         Initialize();
     }
-    KFParticleBase(const KFPTrack &track, const float mass) {
+    /*
+    KFParticle(const KFPTrack &track, const float mass) {
         track.XvYvZv(fP);
         track.PxPyPz(fP + 3);
         float energy = std::sqrt(mass * mass + fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]);
@@ -73,19 +72,19 @@ class alignas(32) KFParticleBase {
         fAtProductionVertex = false;
         fConstructMethod = 0;
     }
-
-    ~KFParticleBase() = default;
+    */
+    ~KFParticle() = default;
 
     void Initialize(const float param[], const float cov[], int charge, float mass);
     void Initialize();
 
-    void Construct(float bz, const KFParticleBase *v_daughters[], int n_daughters, const KFParticleBase *prod_vtx = 0, float mass = -1.);
+    void Construct(float bz, const KFParticle *v_daughters[], int n_daughters, const KFParticle *prod_vtx = 0, float mass = -1.);
 
     float GetDStoPointLine(const float xyz[3], float dsdr[6]) const;
     float GetDStoPointBz(float bz, const float xyz[3], float dsdr[6]) const;
 
-    void GetDStoParticleLine(const KFParticleBase &p, float ds[2], float dsdr[4][6]) const;
-    void GetDStoParticleBz(float bz, const KFParticleBase &p, float ds[2], float dsdr[4][6]) const;
+    void GetDStoParticleLine(const KFParticle &p, float ds[2], float dsdr[4][6]) const;
+    void GetDStoParticleBz(float bz, const KFParticle &p, float ds[2], float dsdr[4][6]) const;
 
     void TransportToDS(float bz, float ds, const float *dsdr);
     void TransportBz(float bz, float ds, const float *dsdr, float p[], float c[], float *dsdr1 = 0, float *f = 0, float *f1 = 0) const;
@@ -146,12 +145,12 @@ class alignas(32) KFParticleBase {
 
     // CONSTRUCTION OF THE PARTICLE BY ITS DAUGHTERS AND MOTHER USING THE KALMAN FILTER METHOD
 
-    void AddDaughter(float bz, const KFParticleBase &daughter);
+    void AddDaughter(float bz, const KFParticle &daughter);
 
-    void AddDaughterWithEnergyFit(float bz, const KFParticleBase &daughter);
-    void AddDaughterWithEnergyFitMC(float bz, const KFParticleBase &daughter);
+    void AddDaughterWithEnergyFit(float bz, const KFParticle &daughter);
+    void AddDaughterWithEnergyFitMC(float bz, const KFParticle &daughter);
 
-    void SetProductionVertex(const KFParticleBase &vtx, float bz);
+    void SetProductionVertex(const KFParticle &vtx, float bz);
 
     void SetNonlinearMassConstraint(float mass);
     void SetMassConstraint(float mass, float sigma_mass = 0);
@@ -245,7 +244,7 @@ class alignas(32) KFParticleBase {
     // Return an element of the covariance matrix with {i,j} indices
     float &Cij(int i, int j) { return fC[IJ(i, j)]; }
     void TransportLine(float S, const float *dsdr, float P[], float C[], float *dsdr1, float *F, float *F1) const;
-    bool GetMeasurement(float bz, const KFParticleBase &daughter, float m[], float V[], float D[3][3]);
+    bool GetMeasurement(float bz, const KFParticle &daughter, float m[], float V[], float D[3][3]);
     void SetMassConstraint(float *mP, float *mC, float mJ[7][7], float mass);
 
     float fP[8];               // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}

@@ -20,7 +20,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "KFParticleBase.h"
+#include "KFParticle.h"
 
 #include <algorithm>
 
@@ -35,7 +35,7 @@
 //           ( 15 16 17 18 19 20 )
 //  \param[in] charge - charge of the particle in elementary charge units
 //  \param[in] mass - the mass hypothesis
-void KFParticleBase::Initialize(const float param[], const float cov[], int charge, float mass) {
+void KFParticle::Initialize(const float param[], const float cov[], int charge, float mass) {
 
     for (int i = 0; i < 6; ++i) fP[i] = param[i];
     for (int i = 0; i < 21; ++i) fC[i] = cov[i];
@@ -73,7 +73,7 @@ void KFParticleBase::Initialize(const float param[], const float cov[], int char
 // 3) Q = 0;
 // 4) chi2 is set to 0;
 // 5) NDF = -3, since 3 parameters should be fitted: X, Y, Z.
-void KFParticleBase::Initialize() {
+void KFParticle::Initialize() {
     for (int i = 0; i < 8; ++i) fP[i] = 0.;
     for (int i = 0; i < 36; ++i) fC[i] = 0.;
     fC[0] = fC[2] = fC[5] = 100.;
@@ -98,7 +98,7 @@ void KFParticleBase::Initialize() {
 // \param[out] m[8] - the output parameters of the daughter particle at the DCA point
 // \param[out] V[36] - the output covariance matrix of the daughter parameters, takes into account the correlation
 // \param[out] D[3][3] - the correlation matrix between the current and daughter particles
-bool KFParticleBase::GetMeasurement(float bz, const KFParticleBase& daughter, float m[], float V[], float D[3][3]) {
+bool KFParticle::GetMeasurement(float bz, const KFParticle& daughter, float m[], float V[], float D[3][3]) {
 
     if (fNDF == -1) {
         float ds[2]{0., 0.};
@@ -254,7 +254,7 @@ bool KFParticleBase::GetMeasurement(float bz, const KFParticleBase& daughter, fl
 // stays fixed in the construction process (fConstructMethod = 2). Implemented in the
 // AddDaughterWithEnergyFitMC() function.
 // \param[in] Daughter - the daughter particle
-void KFParticleBase::AddDaughter(float bz, const KFParticleBase& daughter) {
+void KFParticle::AddDaughter(float bz, const KFParticle& daughter) {
 
     if (fNDF < -1) {  // first daughter -> just copy
         fNDF = -1;
@@ -282,7 +282,7 @@ void KFParticleBase::AddDaughter(float bz, const KFParticleBase& daughter) {
 // is added as the measurement and the mass of the output short-lived particle can become
 // unphysical - smaller then the threshold.
 // \param[in] Daughter - the daughter particle
-void KFParticleBase::AddDaughterWithEnergyFit(float bz, const KFParticleBase& daughter) {
+void KFParticle::AddDaughterWithEnergyFit(float bz, const KFParticle& daughter) {
 
     float m[8];
     float mV[36];
@@ -451,7 +451,7 @@ void KFParticleBase::AddDaughterWithEnergyFit(float bz, const KFParticleBase& da
 // which requires that the masses of daughter particles
 // stays fixed in the construction process.
 // \param[in] Daughter - the daughter particle
-void KFParticleBase::AddDaughterWithEnergyFitMC(float bz, const KFParticleBase& Daughter) {
+void KFParticle::AddDaughterWithEnergyFitMC(float bz, const KFParticle& Daughter) {
 
     float m[8];
     float mV[36];
@@ -710,7 +710,7 @@ void KFParticleBase::AddDaughterWithEnergyFitMC(float bz, const KFParticleBase& 
 // are calculated as well. The parameters of the particle are stored
 // at the position of the production vertex.
 // \param[in] Vtx - the assumed producation vertex
-void KFParticleBase::SetProductionVertex(const KFParticleBase& vtx, float bz) {
+void KFParticle::SetProductionVertex(const KFParticle& vtx, float bz) {
 
     const float* m = vtx.fP;
     const float* mV = vtx.fC;
@@ -893,7 +893,7 @@ void KFParticleBase::SetProductionVertex(const KFParticleBase& vtx, float bz) {
 // \param[in,out] mC - the corresponding covariance matrix
 // \param[in,out] mJ - the Jacobian between initial and modified parameters
 // \param[in] mass - the mass to be set on the state vector mP
-void KFParticleBase::SetMassConstraint(float* mP, float* mC, float mJ[7][7], float mass) {
+void KFParticle::SetMassConstraint(float* mP, float* mC, float mJ[7][7], float mass) {
 
     // Set nonlinear mass constraint (Mass) on the state vector mP with a covariance matrix mC.
 
@@ -989,7 +989,7 @@ void KFParticleBase::SetMassConstraint(float* mP, float* mC, float mJ[7][7], flo
 
 // set the exact nonlinear mass constraint on the current particle.
 // \param[in] mass - the mass to be set on the particle
-void KFParticleBase::SetNonlinearMassConstraint(float mass) {
+void KFParticle::SetNonlinearMassConstraint(float mass) {
 
     float px = fP[3];
     float py = fP[4];
@@ -1013,7 +1013,7 @@ void KFParticleBase::SetNonlinearMassConstraint(float mass) {
 // Set linearised mass constraint on the current particle. The constraint can be set with an uncertainty.
 // \param[in] Mass - the mass to be set on the state vector mP
 // \param[in] SigmaMass - uncertainty of the constraint
-void KFParticleBase::SetMassConstraint(float mass, float sigma_mass) {
+void KFParticle::SetMassConstraint(float mass, float sigma_mass) {
 
     fMassHypo = mass;
     fSumDaughterMass = mass;
@@ -1057,7 +1057,7 @@ void KFParticleBase::SetMassConstraint(float mass, float sigma_mass) {
 
 // set constraint on the zero decay length. When the production point is set
 // the measurement from this particle is created at the decay point.
-void KFParticleBase::SetNoDecayLength(float bz) {
+void KFParticle::SetNoDecayLength(float bz) {
 
     TransportToDecayVertex(bz);
 
@@ -1092,7 +1092,7 @@ void KFParticleBase::SetNoDecayLength(float bz) {
 // \param[in] n_daughters - number of daughter particles in the input array
 // \param[in] parent - optional parrent particle
 // \param[in] mass - optional mass hypothesis
-void KFParticleBase::Construct(float bz, const KFParticleBase* v_daughters[], int n_daughters, const KFParticleBase* parent, float mass) {
+void KFParticle::Construct(float bz, const KFParticle* v_daughters[], int n_daughters, const KFParticle* parent, float mass) {
 
     fAtProductionVertex = false;
     fSFromDecay = 0;
@@ -1114,14 +1114,14 @@ void KFParticleBase::Construct(float bz, const KFParticleBase* v_daughters[], in
 }
 
 // Transports the particle to its decay vertex
-void KFParticleBase::TransportToDecayVertex(float bz) {
+void KFParticle::TransportToDecayVertex(float bz) {
     float dsdr[6] = {0.};
     if (fSFromDecay != 0) TransportToDS(bz, -fSFromDecay, dsdr);
     fAtProductionVertex = false;
 }
 
 // Transports the particle to its production vertex
-void KFParticleBase::TransportToProductionVertex(float bz) {
+void KFParticle::TransportToProductionVertex(float bz) {
     float dsdr[6] = {0.};
     if (fSFromDecay != -fP[7]) TransportToDS(bz, -fSFromDecay - fP[7], dsdr);
     fAtProductionVertex = true;
@@ -1132,7 +1132,7 @@ void KFParticleBase::TransportToProductionVertex(float bz) {
 // 2) p - momentum of the particle.
 // \param[in] dS = l/p - distance normalised to the momentum of the particle to be transported on
 // \param[in] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-void KFParticleBase::TransportToDS(float bz, float ds, const float* dsdr) {
+void KFParticle::TransportToDS(float bz, float ds, const float* dsdr) {
     TransportBz(bz, ds, dsdr, fP, fC);
     fSFromDecay += ds;
 }
@@ -1144,7 +1144,7 @@ void KFParticleBase::TransportToDS(float bz, float ds, const float* dsdr) {
 // Also calculate partial derivatives dsdr of the parameter dS over the state vector of the current particle.
 // \param[in] xyz[3] - point where particle should be transported
 // \param[out] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-float KFParticleBase::GetDStoPointLine(const float xyz[3], float dsdr[6]) const {
+float KFParticle::GetDStoPointLine(const float xyz[3], float dsdr[6]) const {
 
     float p2 = fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5];
     if (p2 < 1.e-4) p2 = 1;
@@ -1168,7 +1168,7 @@ float KFParticleBase::GetDStoPointLine(const float xyz[3], float dsdr[6]) const 
 // \param[in] bz - magnetic field Bz
 // \param[in] xyz[3] - point, to which particle should be transported
 // \param[out] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-float KFParticleBase::GetDStoPointBz(float bz, const float xyz[3], float dsdr[6]) const {
+float KFParticle::GetDStoPointBz(float bz, const float xyz[3], float dsdr[6]) const {
 
     float dS(0.);
 
@@ -1288,7 +1288,7 @@ float KFParticleBase::GetDStoPointBz(float bz, const float xyz[3], float dsdr[6]
 // to other coordinate system (see GetDStoParticleBy() function), otherwise fP are used
 // \param[in] param2 - optional parameter, is used in case if the parameters of the second particles are rotated
 // to other coordinate system (see GetDStoParticleBy() function), otherwise p.fP are used
-void KFParticleBase::GetDStoParticleBz(float bz, const KFParticleBase& p, float dS[2], float dsdr[4][6]) const {
+void KFParticle::GetDStoParticleBz(float bz, const KFParticle& p, float dS[2], float dsdr[4][6]) const {
 
     // in XY plane first root
     float bq1 = bz * fQ * kCLight;
@@ -1731,7 +1731,7 @@ void KFParticleBase::GetDStoParticleBz(float bz, const KFParticleBase& p, float 
 // \param[in] p - second particle
 // \param[out] dS[2] - transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
 // \param[out] dsdr[4][6] - partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
-void KFParticleBase::GetDStoParticleLine(const KFParticleBase& p, float ds[2], float dsdr[4][6]) const {
+void KFParticle::GetDStoParticleLine(const KFParticle& p, float ds[2], float dsdr[4][6]) const {
 
     float p12 = fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5];
     float p22 = p.fP[3] * p.fP[3] + p.fP[4] * p.fP[4] + p.fP[5] * p.fP[5];
@@ -1816,7 +1816,7 @@ void KFParticleBase::GetDStoParticleLine(const KFParticleBase& p, float ds[2], f
 // \param[out] F[36] - optional parameter, transport jacobian, 6x6 matrix F = d(fP new)/d(fP old)
 // \param[out] F1[36] - optional parameter, corelation 6x6 matrix betweeen the current particle and particle or vertex
 // with the state vector r1, to which the current particle is being transported, F1 = d(fP new)/d(r1)
-void KFParticleBase::TransportBz(float bz, float dS, const float* dsdr, float P[], float C[], float* dsdr1, float* F, float* F1) const {
+void KFParticle::TransportBz(float bz, float dS, const float* dsdr, float P[], float C[], float* dsdr1, float* F, float* F1) const {
 
     float bq = bz * fQ * kCLight;
     float bs = bq * dS;
@@ -1901,7 +1901,7 @@ void KFParticleBase::TransportBz(float bz, float dS, const float* dsdr, float P[
 // \param[out] F[36] - optional parameter, transport jacobian, 6x6 matrix F = d(fP new)/d(fP old)
 // \param[out] F1[36] - optional parameter, corelation 6x6 matrix betweeen the current particle and particle or vertex
 // with the state vector r1, to which the current particle is being transported, F1 = d(fP new)/d(r1)
-void KFParticleBase::TransportLine(float ds, const float* dsdr, float P[], float C[], float* dsdr1, float F[], float F1[]) const {
+void KFParticle::TransportLine(float ds, const float* dsdr, float P[], float C[], float* dsdr1, float F[], float F1[]) const {
 
     float mJ[8][8];
     for (int i = 0; i < 8; ++i) {
@@ -1958,7 +1958,7 @@ void KFParticleBase::TransportLine(float ds, const float* dsdr, float P[], float
 
 //  symmetric 3x3 matrix a using modified Choletsky decomposition. The result is stored to the same matrix a.
 // \param[in,out] a - 3x3 symmetric matrix
-void KFParticleBase::InvertCholetsky3(float a[6]) {
+void KFParticle::InvertCholetsky3(float a[6]) {
 
     float d[3];
     float uud;
@@ -2009,7 +2009,7 @@ void KFParticleBase::InvertCholetsky3(float a[6]) {
 // \param[in] S - input symmetric matrix
 // \param[out] SOut - output symmetric matrix
 // \param[in] kN - dimensionality of the matrices
-void KFParticleBase::MultQSQt(const float Q[], const float S[], float SOut[], const int kN) {
+void KFParticle::MultQSQt(const float Q[], const float S[], float SOut[], const int kN) {
 
     float* mA = new float[kN * kN];
 
