@@ -16,6 +16,17 @@ set(CMAKE_CXX_FLAGS
     "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wshadow -Wnon-virtual-dtor -march=native -mtune=native -O3"
 )
 
+# enable lto #
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT LTO_SUPPORTED)
+if(LTO_SUPPORTED)
+  message(STATUS "LTO/IPO is supported")
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+else()
+  message(STATUS "LTO/IPO is not supported")
+endif()
+
 # includes and macros #
 
 include(CMakePackageConfigHelpers)
@@ -34,7 +45,7 @@ endmacro()
 # some definitions #
 
 set(SOURCES KFParticle/KFParticle.cxx)
-set(HEADERS KFParticle/KFParticle.h)
+set(HEADERS KFParticle/KFParticle.h KFParticle/KFParticle_Math.hxx)
 
 # main target #
 

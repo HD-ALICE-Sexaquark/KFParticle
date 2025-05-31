@@ -23,26 +23,46 @@
 #ifndef KFPARTICLE_H
 #define KFPARTICLE_H
 
-#include <array>
 #include <cmath>
-#include <cstddef>
 #include <iostream>
+#include <utility>
+
+#include "KFParticle_Math.hxx"
 
 namespace KF {
 
-template <size_t N>
-using Vector = std::array<double, N>;
+struct alignas(32) Cache {
+    Vector<3> dir{};
+    Vector<3> pca{};
+    double theta{0.};
+    double sin{0.};
+    double cos{0.};
+    double sB{0.};
+    double cB{0.};
+    double ds{0.};
+};
 
-template <size_t N, size_t M>
-using Matrix = std::array<std::array<double, N>, M>;
-
-template <size_t N>
-using SymMatrix = std::array<double, N *(N + 1) / 2>;
-
-namespace Const {
-constexpr double Kappa{0.000299792458};  // (GeV/c) / (kG/cm)
-constexpr double AbsAlmostZero{1.E-8};
-}  // namespace Const
+namespace Result {
+struct alignas(32) MinPart2Vtx : Cache {
+    Vector<6> ds_dr{};
+};
+struct alignas(32) MinPart2Part : MinPart2Vtx {
+    Vector<6> ds_dr1{};
+};
+struct alignas(32) Transport {
+    Matrix<6, 6> jacob{};
+    Matrix<6, 6> corr{};
+    SymMatrix<8> C{};
+    Vector<8> P{};
+};
+struct alignas(32) Measurement {
+    SymMatrix<8> C1{};
+    SymMatrix<8> C2{};
+    Matrix<3, 3> D{};
+    Vector<8> P1{};
+    Vector<8> P2{};
+};
+}  // namespace Result
 
 // @class KFParticleBase
 // @brief The base of KFParticle class, describes particle objects.
@@ -65,23 +85,16 @@ class alignas(32) Particle {
     void Initialize();
     void Initialize(const Vector<6> &param, const SymMatrix<6> &cov, int charge, double mass);
 
-    bool GetMeasurement(double bz, const Particle &daughter, Vector<8> &m, SymMatrix<8> &V, Matrix<3, 3> &D);
+    Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
-    void Construct(double bz, const Particle *v_daughters[], int n_daughters, const Particle *parent = nullptr, double mass = -1.);
+    Result::MinPart2Vtx MinimizeLinePoint(const Vector<3> &xyz) const;
+    Result::MinPart2Vtx MinimizeHelixPoint(const Vector<3> &xyz, double bz) const;
 
-    double GetDStoPointLine(const Vector<3> &xyz, Vector<6> &ds_dr) const;
-    double GetDStoPointBz(double bz, const Vector<3> &xyz, Vector<6> &ds_dr) const;
+    std::pair<Result::MinPart2Part, Result::MinPart2Part> MinimizeLineLine(const Particle &p) const;
+    std::pair<Result::MinPart2Part, Result::MinPart2Part> MinimizeHelixHelix(const Particle &p, double bz) const;
 
-    void GetDStoParticleLine(const Particle &p, double ds[2], Vector<6> dsdr[4]) const;
-    void GetDStoParticleBz(double bz, const Particle &p, double dS[2], Vector<6> ds_dr[4]) const;
-
-    void TransportToDS(double bz, double ds, const Vector<6> &dsdr);
-    void TransportBz(double bz, double ds, const Vector<6> &dsdr, Vector<8> &P, SymMatrix<8> &C, const Vector<6> &dsdr1, Matrix<6, 6> &jacob,
-                     Matrix<6, 6> &corr) const;
-    void TransportToDecayVertex(double bz);
-    void TransportToProductionVertex(double bz);
-    void TransportLine(double ds, const Vector<6> &ds_dr, Vector<8> &P, SymMatrix<8> &C, const Vector<6> &ds_dr1, Matrix<6, 6> &jacob,
-                       Matrix<6, 6> &corr) const;
+    Result::Transport TransportBz(const Result::MinPart2Part &min, double bz) const;
+    Result::Transport TransportLine(const Result::MinPart2Part &min) const;
 
     // define the construction method for the current particle (see description of fConstructMethod)
     void SetConstructMethod(int m) { fConstructMethod = m; }
@@ -142,113 +155,33 @@ class alignas(32) Particle {
     double &Covariance(int i) { return fC[i]; }                // modifier of C[i] element of the covariance matrix in the lower triangular form
     double &Covariance(int i, int j) { return fC[IJ(i, j)]; }  // modifier of C[i,j] element of the covariance matrix
 
-    void AddDaughter(double bz, const Particle &daughter);
-    void AddDaughterWithEnergyFit(double bz, const Particle &daughter);
-    void AddDaughterWithEnergyFitMC(double bz, const Particle &daughter);
+    void AddDaughter(const Particle &daughter, double bz);
+    void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    void AddDaughterWithEnergyFitMC(const Particle &daughter, double bz, double chi2_threshold = 1E4);
 
     void SetNonlinearMassConstraint(double mass);
     void SetMassConstraint(double mass, double sigma_mass = 0);
     void SetMassConstraint(Vector<8> &mP, SymMatrix<8> &mC, Matrix<7, 7> &mJ, double mass) const;
 
     void SetProductionVertex(const Particle &vtx, double bz);
-    void SetNoDecayLength(double bz);  // set no decay length for resonances
-
-    static void InvertCholesky3(SymMatrix<3> &a);
-
-    template <int N>
-    SymMatrix<N> MultQSQt(const Matrix<N, N> &Q, const SymMatrix<N> &S) const;
-
-    template <int N>
-    void PrintVector(std::string_view name, const Vector<N> arr) const {
-        std::cout << name << " = ";
-        for (int i{0}; i < N; ++i) {
-            std::cout << arr[i];
-            if (i + 1 < N)
-                std::cout << "    ";
-            else
-                std::cout << '\n';
-        }
-    }
-
-    template <int N>
-    void PrintSymMatrix(std::string_view name, const SymMatrix<N> arr) const {
-        std::cout << name << " =\n";
-        int n_in_row{0};
-        int max_n_row{1};
-        for (int i{0}; i < N * (N + 1) / 2; ++i) {
-            std::cout << arr[i];
-            n_in_row++;
-            if (n_in_row == max_n_row) {
-                std::cout << '\n';
-                n_in_row = 0;
-                max_n_row++;
-            } else {
-                std::cout << "    ";
-            }
-        }
-    }
-
-    template <int N, int M>
-    void PrintMatrix(std::string_view name, const Matrix<N, M> &arr) const {
-        std::cout << name << " =\n";
-        for (int i{0}; i < N; ++i) {
-            for (int j{0}; j < M; ++j) {
-                std::cout << arr[i][j];
-                if (j + 1 < M)
-                    std::cout << "    ";
-                else
-                    std::cout << '\n';
-            }
-        }
-    }
-
-    template <int N>
-    void PrintJoinedMatrix(std::string_view name, const Vector<N> &arr1, const Vector<N> &arr2, const Vector<N> &arr3) const {
-        std::cout << name << " =\n";
-        for (int i{0}; i < N; ++i) {
-            std::cout << "  " << arr1[i] << "    " << arr2[i] << "    " << arr3[i] << '\n';
-        }
-    }
 
     void Print() {
-        std::cout << "# V0" << '\n';
         std::cout << "(X,Y,Z)      = " << fP[0] << "    " << fP[1] << "    " << fP[2] << '\n';
         std::cout << "Radius       = " << std::sqrt(fP[0] * fP[0] + fP[1] * fP[1]) << '\n';
         std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
         std::cout << "Mass         = " << std::sqrt(fP[6] * fP[6] - fP[3] * fP[3] - fP[4] * fP[4] - fP[5] * fP[5]) << '\n';
-        std::cout << "Chi2/NDF     = " << fChi2 << '\n';
-    }
-
-    template <size_t N>
-    static std::array<double, N> Zero() {
-        std::array<double, N> vec;
-        vec.fill(0);
-        return vec;
-    }
-
-    template <size_t N, size_t M>
-    static Matrix<N, M> Zero() {
-        Matrix<N, M> mat;
-        for (auto &row : mat) row.fill(0.);
-        return mat;
+        std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
     }
 
    protected:
-    // Convert a pair of indices {i,j} of the covariance matrix to one index corresponding to the triangular form
-    static int IJ(int i, int j) { return (j <= i) ? i * (i + 1) / 2 + j : j * (j + 1) / 2 + i; }
-    // Return an element of the covariance matrix with {i,j} indices
     double &Cij(int i, int j) { return fC[IJ(i, j)]; }
-
-    Vector<8> fP{0., 0., 0., 0., 0., 0., 0., 0.};  // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
-    SymMatrix<8> fC{Zero<8 * 9 / 2>()};            // low-triangle covariance matrix of fP
-    double fChi2{0.};                              // chi^2
-    int fNDF{-3};                                  // number of degrees of freedom
-    double fSFromDecay{0.};                        // distance from the decay vertex to the current position
-    double fSumDaughterMass{0.};      // sum of the daughter particles masses Needed to set the constraint on the minimum mass during particle
-                                      // construction
-    double fMassHypo{-1.};            // the mass hypothesis, used for the constraints during particle construction
-    bool fAtProductionVertex{false};  // flag shows if particle is at the production point
-    int fQ{0};                        // the charge of the particle in units of elementary charge
+    SymMatrix<8> fC{};            // low-triangle covariance matrix of fP
+    Vector<8> fP{};               // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
+    double fChi2{0.};             // chi2
+    double fSumDaughterMass{0.};  // sum of the daughter particles masses Needed to set the constraint on the minimum mass during particle
+    double fMassHypo{-1.};        // the mass hypothesis, used for the constraints during particle construction
+    int fNDF{-3};                 // number of degrees of freedom
+    int fQ{0};                    // the charge of the particle in units of elementary charge
 
     // Determine particle construction method.
     // 0 - Energy considered as an independent variable, fitted independently from momentum, without any constraints on mass

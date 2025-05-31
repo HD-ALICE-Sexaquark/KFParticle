@@ -21,8 +21,10 @@
  */
 
 #include "KFParticle.h"
+#include "KFParticle_Math.hxx"
 
 #include <algorithm>
+#include <tuple>
 
 namespace KF {
 
@@ -34,7 +36,7 @@ void Particle::Initialize() {
     fC[35] = 1.;
 }
 
-// set the parameters of the particle:
+// Set the parameters of the particle:
 //  \param[in] param[6] = { X, Y, Z, Px, Py, Pz } - position and momentum
 //  \param[in] cov[21]  - lower-triangular part of the 6x6 covariance matrix:
 //           (  0  .  .  .  .  . )
@@ -46,6 +48,9 @@ void Particle::Initialize() {
 //  \param[in] charge - charge of the particle in elementary charge units
 //  \param[in] mass - the mass hypothesis
 void Particle::Initialize(const Vector<6>& param, const SymMatrix<6>& cov, int charge, double mass) {
+#if KF_DEBUG
+    std::cout << "-- starting (Initialize) --" << '\n';
+#endif
 
     for (int i{0}; i < 6; ++i) fP[i] = param[i];
     double energy = std::sqrt(mass * mass + fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]);
@@ -79,47 +84,43 @@ void Particle::Initialize(const Vector<6>& param, const SymMatrix<6>& cov, int c
 // mathematics. If these are two first daughters they are transported to the point of the closest approach,
 // if the third or higher daughter is added it is transported to the DCA point of the already constructed
 // vertex. The correlations are taken into account in the covariance matrices of both measurements,
-// the correlation matrix of two measurements is also calculated. Parameters of the current particle are
-// modified by this function, the daughter is not changed, its parameters are stored to the output arrays
-// after modifications.
-// \param[in] daughter - the daughter particle to be added, stays unchanged
-// \param[out] m[8] - the output parameters of the daughter particle at the DCA point
-// \param[out] V[36] - the output covariance matrix of the daughter parameters, takes into account the correlation
-// \param[out] D[3][3] - the correlation matrix between the current and daughter particles
-bool Particle::GetMeasurement(double bz, const Particle& daughter, Vector<8>& m, SymMatrix<8>& V, Matrix<3, 3>& D) {
+// the correlation matrix of two measurements is also calculated.
+// Input:
+// - daughter - the daughter particle to be added, stays unchanged
+// - bz - z-component of magnetic field
+// Return:
+// - P[8] - the output parameters of the daughter particle at the DCA point
+// - V[36] - the output covariance matrix of the daughter parameters, takes into account the correlation
+// - D[3][3] - the correlation matrix between the current and daughter particles
+Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz) const {
+#if KF_DEBUG
+    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+#endif
 
     if (fNDF == -1) {
-        double ds[2]{0., 0.};
-        Vector<6> ds_dr[4];
-        auto F1 = Zero<6, 6>();
-        auto F2 = Zero<6, 6>();
-        auto F3 = Zero<6, 6>();
-        auto F4 = Zero<6, 6>();
-        GetDStoParticleBz(bz, daughter, ds, ds_dr);
+        auto [min1, min2] = MinimizeHelixHelix(daughter, bz);
 
-        SymMatrix<6> C{Cov_6x6()};
-#if KF_DEBUG
-        PrintSymMatrix<6>("(GetMeasurement) C", C);
-#endif
+        auto tpr1 = TransportBz(min1, bz);
+        auto tpr2 = daughter.TransportBz(min2, bz);
 
-        TransportBz(bz, ds[0], ds_dr[0], fP, fC, ds_dr[1], F1, F2);
-        daughter.TransportBz(bz, ds[1], ds_dr[3], m, V, ds_dr[2], F4, F3);
 #if KF_DEBUG
-        PrintMatrix<6, 6>("(GetMeasurement) F1", F1);
-        PrintMatrix<6, 6>("(GetMeasurement) F2", F2);
-        PrintMatrix<6, 6>("(GetMeasurement) F3", F3);
-        PrintMatrix<6, 6>("(GetMeasurement) F4", F4);
+        PrintMatrix<6, 6>("(GetMeasurement) F1", tpr1.jacob);
+        PrintMatrix<6, 6>("(GetMeasurement) F2", tpr1.corr);
+        PrintMatrix<6, 6>("(GetMeasurement) F3", tpr2.corr);
+        PrintMatrix<6, 6>("(GetMeasurement) F4", tpr2.jacob);
 #endif
-        SymMatrix<6> V0Tmp{MultQSQt<6>(F2, daughter.Cov_6x6())};
-        SymMatrix<6> V1Tmp{MultQSQt<6>(F3, C)};
+        SymMatrix<6> V0Tmp{MultQSQt<6>(tpr1.corr, daughter.Cov_6x6())};
+        SymMatrix<6> V1Tmp{MultQSQt<6>(tpr2.corr, Cov_6x6())};
 #if KF_DEBUG
         PrintSymMatrix<6>("(GetMeasurement) V0Tmp", V0Tmp);
         PrintSymMatrix<6>("(GetMeasurement) V1Tmp", V1Tmp);
 #endif
 
+        Result::Measurement meas{tpr1.C, tpr2.C, Matrix<3, 3>{}, tpr1.P, tpr2.P};
+
         for (int iC{0}; iC < 21; ++iC) {
-            fC[iC] += V0Tmp[iC];
-            V[iC] += V1Tmp[iC];
+            meas.C1[iC] += V0Tmp[iC];
+            meas.C2[iC] += V1Tmp[iC];
         }
 
         Matrix<6, 6> C1F1T;
@@ -127,7 +128,7 @@ bool Particle::GetMeasurement(double bz, const Particle& daughter, Vector<8>& m,
             for (int j{0}; j < 6; ++j) {
                 C1F1T[i][j] = 0.;
                 for (int k{0}; k < 6; ++k) {
-                    C1F1T[i][j] += C[IJ(i, k)] * F1[j][k];
+                    C1F1T[i][j] += fC[IJ(i, k)] * tpr1.jacob[j][k];
                 }
             }
         }
@@ -136,7 +137,7 @@ bool Particle::GetMeasurement(double bz, const Particle& daughter, Vector<8>& m,
             for (int j{0}; j < 6; ++j) {
                 F3C1F1T[i][j] = 0.;
                 for (int k{0}; k < 6; ++k) {
-                    F3C1F1T[i][j] += F3[i][k] * C1F1T[k][j];
+                    F3C1F1T[i][j] += tpr2.corr[i][k] * C1F1T[k][j];
                 }
             }
         }
@@ -145,76 +146,80 @@ bool Particle::GetMeasurement(double bz, const Particle& daughter, Vector<8>& m,
             for (int j{0}; j < 6; ++j) {
                 C2F2T[i][j] = 0.;
                 for (int k{0}; k < 6; ++k) {
-                    C2F2T[i][j] += daughter.fC[IJ(i, k)] * F2[j][k];
+                    C2F2T[i][j] += daughter.fC[IJ(i, k)] * tpr1.corr[j][k];
                 }
             }
         }
         for (int i{0}; i < 3; ++i) {
             for (int j{0}; j < 3; ++j) {
-                D[i][j] = F3C1F1T[i][j];
+                meas.D[i][j] = F3C1F1T[i][j];
                 for (int k{0}; k < 6; ++k) {
-                    D[i][j] += F4[i][k] * C2F2T[k][j];
+                    meas.D[i][j] += tpr2.jacob[i][k] * C2F2T[k][j];
                 }
             }
         }
 #if KF_DEBUG
-        PrintSymMatrix<8>("(GetMeasurement) fC", fC);
-        PrintSymMatrix<8>("(GetMeasurement) V", V);
+        PrintVector<8>("(GetMeasurement) meas.P1", meas.P1);
+        PrintVector<8>("(GetMeasurement) meas.P2", meas.P2);
+        PrintSymMatrix<8>("(GetMeasurement) meas.C1", meas.C1);
+        PrintSymMatrix<8>("(GetMeasurement) meas.C2", meas.C2);
         PrintMatrix<6, 6>("(GetMeasurement) C1F1T", C1F1T);
         PrintMatrix<6, 6>("(GetMeasurement) F3C1F1T", F3C1F1T);
         PrintMatrix<6, 6>("(GetMeasurement) C2F2T", C2F2T);
-        PrintMatrix<3, 3>("(GetMeasurement) D", D);
+        PrintMatrix<3, 3>("(GetMeasurement) D", meas.D);
+        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
-    } else {
-        Vector<6> ds_dr{0., 0., 0., 0., 0., 0};
-        double ds{daughter.GetDStoPointBz(bz, XYZ(), ds_dr)};
 
-        Vector<6> dsdp{-ds_dr[0], -ds_dr[1], -ds_dr[2], 0., 0., 0.};
+        return meas;
+    }
+    Result::Measurement meas;  // ULTRA PENDING
 
-        auto F = Zero<6, 6>();
-        auto F1 = Zero<6, 6>();
-        daughter.TransportBz(bz, ds, ds_dr, m, V, dsdp, F, F1);
+    Vector<6> ds_dr{0., 0., 0., 0., 0., 0.};
+    // double ds{daughter.GetDStoPointBz(bz, XYZ(), ds_dr)}; // PENDING
 
-        Matrix<3, 6> VFT;
-        for (int i{0}; i < 3; ++i) {
-            for (int j{0}; j < 6; ++j) {
-                VFT[i][j] = 0.;
-                for (int k{0}; k < 3; ++k) {
-                    VFT[i][j] += fC[IJ(i, k)] * F1[j][k];
-                }
+    Vector<6> dsdp{-ds_dr[0], -ds_dr[1], -ds_dr[2], 0., 0., 0.};
+
+    Matrix<6, 6> F{};
+    Matrix<6, 6> F1{};
+    // daughter.TransportBz(bz, ds, ds_dr, m, V, dsdp, F, F1); // PENDING
+
+    Matrix<3, 6> VFT;
+    for (int i{0}; i < 3; ++i) {
+        for (int j{0}; j < 6; ++j) {
+            VFT[i][j] = 0.;
+            for (int k{0}; k < 3; ++k) {
+                VFT[i][j] += fC[IJ(i, k)] * F1[j][k];
             }
         }
-
-        Matrix<6, 6> FVFT;
-        for (int i{0}; i < 6; ++i) {
-            for (int j{0}; j < 6; ++j) {
-                FVFT[i][j] = 0.;
-                for (int k{0}; k < 3; ++k) {
-                    FVFT[i][j] += F1[i][k] * VFT[k][j];
-                }
-            }
-        }
-
-        for (int i{0}; i < 3; ++i) {
-            for (int j{0}; j < 3; ++j) {
-                D[i][j] = 0.;
-                for (int k{0}; k < 3; ++k) {
-                    D[i][j] += fC[IJ(j, k)] * F1[i][k];
-                }
-            }
-        }
-        V[0] += FVFT[0][0];
-        V[1] += FVFT[1][0];
-        V[2] += FVFT[1][1];
-        V[3] += FVFT[2][0];
-        V[4] += FVFT[2][1];
-        V[5] += FVFT[2][2];
     }
 
-    return true;
+    Matrix<6, 6> FVFT;
+    for (int i{0}; i < 6; ++i) {
+        for (int j{0}; j < 6; ++j) {
+            FVFT[i][j] = 0.;
+            for (int k{0}; k < 3; ++k) {
+                FVFT[i][j] += F1[i][k] * VFT[k][j];
+            }
+        }
+    }
+
+    for (int i{0}; i < 3; ++i) {
+        for (int j{0}; j < 3; ++j) {
+            for (int k{0}; k < 3; ++k) {
+                meas.D[i][j] += fC[IJ(j, k)] * F1[i][k];
+            }
+        }
+    }
+    meas.C2[0] += FVFT[0][0];
+    meas.C2[1] += FVFT[1][0];
+    meas.C2[2] += FVFT[1][1];
+    meas.C2[3] += FVFT[2][0];
+    meas.C2[4] += FVFT[2][1];
+    meas.C2[5] += FVFT[2][2];
+    return meas;
 }
 
-// Adds daughter to the current particle. Depending on the selected construction method uses:
+// Add daughter to the current particle. Depending on the selected construction method uses:
 // 1) Either simplifyed fast mathematics which consideres momentum and energy as
 // independent variables and thus ignores constraint on the fixed mass (fConstructMethod = 0).
 // In this case the mass of the daughter particle can be corrupted when the constructed vertex
@@ -224,82 +229,108 @@ bool Particle::GetMeasurement(double bz, const Particle& daughter, Vector<8>& m,
 // 2) Or slower but correct mathematics which requires that the masses of daughter particles
 // stays fixed in the construction process (fConstructMethod = 2). Implemented in the
 // AddDaughterWithEnergyFitMC() function.
-// \param[in] Daughter - the daughter particle
-void Particle::AddDaughter(double bz, const Particle& daughter) {
+// \param[in] daughter - the daughter particle
+void Particle::AddDaughter(const Particle& daughter, double bz) {
 
     if (fNDF < -1) {  // first daughter -> just copy
-        fNDF = -1;
+        fNDF += 2;
         fQ = daughter.GetQ();
         for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
         for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
-        fSFromDecay = 0.;
         fMassHypo = daughter.fMassHypo;
         fSumDaughterMass = daughter.fSumDaughterMass;
         return;
     }
 
     if (fConstructMethod == 0)
-        AddDaughterWithEnergyFit(bz, daughter);
+        AddDaughterWithEnergyFit(daughter, bz);
     else if (fConstructMethod == 2)
-        AddDaughterWithEnergyFitMC(bz, daughter);
+        AddDaughterWithEnergyFitMC(daughter, bz);
 
     fSumDaughterMass += daughter.fSumDaughterMass;
     fMassHypo = -1.;
 }
 
-// Adds daughter to the current particle. Uses simplifyed fast mathematics which consideres momentum
+// Add daughter to the current particle. Uses simplifyed fast mathematics which consideres momentum
 // and energy as independent variables and thus ignores constraint on the fixed mass.
 // In this case the mass of the daughter particle can be corrupted when the constructed vertex
 // is added as the measurement and the mass of the output short-lived particle can become
 // unphysical - smaller then the threshold.
-// \param[in] Daughter - the daughter particle
-void Particle::AddDaughterWithEnergyFit(double bz, const Particle& daughter) {
+// Input:
+// - daughter       : the daughter particle
+// - bz             : z-component of magnetic field
+// - chi2_threshold : do an early cut of chi2
+// CONSIDERATION: it will modify the state of the current KF::Particle
+void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
+#if KF_DEBUG
+    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+#endif
 
-    Vector<8> m{Zero<8>()};
-    SymMatrix<8> mV{Zero<36>()};
+    auto meas = GetMeasurement(daughter, bz);
 
-    auto D = Zero<3, 3>();
-    if (!GetMeasurement(bz, daughter, m, mV, D)) return;
-
-    SymMatrix<3> mS{fC[0] + mV[0],                 //
-                    fC[1] + mV[1], fC[2] + mV[2],  //
-                    fC[3] + mV[3], fC[4] + mV[4], fC[5] + mV[5]};
+    SymMatrix<3> mS{meas.C1[0] + meas.C2[0],                           //
+                    meas.C1[1] + meas.C2[1], meas.C1[2] + meas.C2[2],  //
+                    meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
 
     InvertCholesky3(mS);
 #if KF_DEBUG
-    PrintVector<8>("(AddDaughterWithEnergyFit) m", m);
-    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) mV", mV);
-    PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) D", D);
+    PrintVector<8>("(AddDaughterWithEnergyFit) meas.P1", meas.P1);
+    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) meas.C1", meas.C1);
+    PrintVector<8>("(AddDaughterWithEnergyFit) meas.P2", meas.P2);
+    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) meas.C2", meas.C2);
+    PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) meas.D", meas.D);
     PrintSymMatrix<3>("(AddDaughterWithEnergyFit) mS", mS);
 #endif
-    // Residual (measured - estimated)
 
-    Vector<3> zeta{m[0] - fP[0], m[1] - fP[1], m[2] - fP[2]};
+    Vector<3> zeta{meas.P2[0] - meas.P1[0], meas.P2[1] - meas.P1[1], meas.P2[2] - meas.P1[2]};
 
     double dChi2{(mS[0] * zeta[0] + mS[1] * zeta[1] + mS[3] * zeta[2]) * zeta[0] + (mS[1] * zeta[0] + mS[2] * zeta[1] + mS[4] * zeta[2]) * zeta[1] +
                  (mS[3] * zeta[0] + mS[4] * zeta[1] + mS[5] * zeta[2]) * zeta[2]};
-    // if (dChi2 > 1e9) return;  // PENDING: consider chi2 threshold
-
-    Matrix<3, 3> K;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            K[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) K[i][j] += fC[IJ(i, k)] * mS[IJ(k, j)];
-        }
-    }
 #if KF_DEBUG
     PrintVector<3>("(AddDaughterWithEnergyFit) zeta", zeta);
-    std::cout << "(AddDaughterWithEnergyFit) dChi2 = " << dChi2 << '\n';
-    PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) K", K);
+    PrintValue(__FUNCTION__, "dChi2", dChi2);
+#endif
+    if (dChi2 > chi2_threshold) return;
+
+    // update current particle state //
+
+    for (int i{0}; i < 8; ++i) fP[i] = meas.P1[i];
+    for (int i{0}; i < 28; ++i) fC[i] = meas.C1[i];
+
+    // add daughter's momentum to particle momentum //
+
+    fP[3] += meas.P2[3];
+    fP[4] += meas.P2[4];
+    fP[5] += meas.P2[5];
+    fP[6] += meas.P2[6];
+
+    fC[9] += meas.C2[9];
+    fC[13] += meas.C2[13];
+    fC[14] += meas.C2[14];
+    fC[18] += meas.C2[18];
+    fC[19] += meas.C2[19];
+    fC[20] += meas.C2[20];
+    fC[24] += meas.C2[24];
+    fC[25] += meas.C2[25];
+    fC[26] += meas.C2[26];
+    fC[27] += meas.C2[27];
+
+#if KF_DEBUG
+    PrintVector<8>("(AddDaughterWithEnergyFit) fP (before Kalman gain)", fP);
+    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) fC (before Kalman gain)", fC);
 #endif
 
     // CHt = CH' - D'
-
-    Vector<7> mCHt0{fC[0], fC[1], fC[3], fC[6] - mV[6], fC[10] - mV[10], fC[15] - mV[15], fC[21] - mV[21]};
-    Vector<7> mCHt1{fC[1], fC[2], fC[4], fC[7] - mV[7], fC[11] - mV[11], fC[16] - mV[16], fC[22] - mV[22]};
-    Vector<7> mCHt2{fC[3], fC[4], fC[5], fC[8] - mV[8], fC[12] - mV[12], fC[17] - mV[17], fC[23] - mV[23]};
-
     // Kalman gain K = mCH'*S
+    // New estimation of the vertex position r += K*zeta
+    // New covariance matrix C -= K*(mCH')'
+
+    Vector<7> mCHt0{
+        meas.C1[0], meas.C1[1], meas.C1[3], meas.C1[6] - meas.C2[6], meas.C1[10] - meas.C2[10], meas.C1[15] - meas.C2[15], meas.C1[21] - meas.C2[21]};
+    Vector<7> mCHt1{
+        meas.C1[1], meas.C1[2], meas.C1[4], meas.C1[7] - meas.C2[7], meas.C1[11] - meas.C2[11], meas.C1[16] - meas.C2[16], meas.C1[22] - meas.C2[22]};
+    Vector<7> mCHt2{
+        meas.C1[3], meas.C1[4], meas.C1[5], meas.C1[8] - meas.C2[8], meas.C1[12] - meas.C2[12], meas.C1[17] - meas.C2[17], meas.C1[23] - meas.C2[23]};
 
     Vector<7> k0;
     Vector<7> k1;
@@ -309,43 +340,27 @@ void Particle::AddDaughterWithEnergyFit(double bz, const Particle& daughter) {
         k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
         k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
     }
-#if KF_DEBUG
-    PrintJoinedMatrix<7>("(AddDaughterWithEnergyFit) mCH", mCHt0, mCHt1, mCHt2);
-    PrintJoinedMatrix<7>("(AddDaughterWithEnergyFit) KGain", k0, k1, k2);
-#endif
-
-    // Add the daughter momentum to the particle momentum
-
-    fP[3] += m[3];
-    fP[4] += m[4];
-    fP[5] += m[5];
-    fP[6] += m[6];
-
-    fC[9] += mV[9];
-    fC[13] += mV[13];
-    fC[14] += mV[14];
-    fC[18] += mV[18];
-    fC[19] += mV[19];
-    fC[20] += mV[20];
-    fC[24] += mV[24];
-    fC[25] += mV[25];
-    fC[26] += mV[26];
-    fC[27] += mV[27];
-
-#if KF_DEBUG
-    PrintVector<8>("(AddDaughterWithEnergyFit) fP", fP);
-    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) fC", fC);
-#endif
-
-    // New estimation of the vertex position r += K*zeta
 
     for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
-
-    // New covariance matrix C -= K*(mCH')'
 
     for (int i{0}, k{0}; i < 7; ++i) {
         for (int j{0}; j <= i; ++j, ++k) {
             fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
+        }
+    }
+
+#if KF_DEBUG
+    PrintJoinedMatrix<7>("(AddDaughterWithEnergyFit) mCH", mCHt0, mCHt1, mCHt2);
+    PrintJoinedMatrix<7>("(AddDaughterWithEnergyFit) KGain", k0, k1, k2);
+    PrintVector<8>("(AddDaughterWithEnergyFit) fP (after Kalman gain)", fP);
+    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) fC (after Kalman gain)", fC);
+#endif
+
+    Matrix<3, 3> K;
+    for (int i{0}; i < 3; ++i) {
+        for (int j{0}; j < 3; ++j) {
+            K[i][j] = 0.;
+            for (int k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
         }
     }
 
@@ -359,7 +374,7 @@ void Particle::AddDaughterWithEnergyFit(double bz, const Particle& daughter) {
     for (int i{0}; i < 3; ++i) {
         for (int j{0}; j < 3; ++j) {
             A[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) A[i][j] += D[i][k] * K2[k][j];
+            for (int k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
         }
     }
 
@@ -378,55 +393,60 @@ void Particle::AddDaughterWithEnergyFit(double bz, const Particle& daughter) {
     fC[4] += M[1][2] + M[2][1];
     fC[5] += 2. * M[2][2];
 #if KF_DEBUG
-    PrintVector<8>("(AddDaughterWithEnergyFit) fP", fP);
+    PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) K", K);
     PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) K2", K2);
     PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) A", A);
     PrintMatrix<3, 3>("(AddDaughterWithEnergyFit) M", M);
-    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) fC", fC);
-    std::cout << "-- finished (AddDaughterWithEnergyFit) --" << '\n';
+    PrintSymMatrix<8>("(AddDaughterWithEnergyFit) fC (the end)", fC);
 #endif
 
     // Calculate Chi^2
 
     fNDF += 2;
     fQ += daughter.GetQ();
-    fSFromDecay = 0.;
     fChi2 += dChi2;
+#if KF_DEBUG
+    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
 }
 
-// Add daughter to the current particle. Uses slower but correct mathematics
-// which requires that the masses of daughter particles
-// stays fixed in the construction process.
-// \param[in] daughter - the daughter particle
-void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
+// Add daughter to the current particle. Uses slower but correct mathematics,
+// which requires that the masses of daughter particles stays fixed in the construction process.
+// Input:
+// - daughter       : the daughter particle
+// - bz             : z-component of magnetic field
+// - chi2_threshold : do an early cut of chi2
+// CONSIDERATION: it will modify the state of the current KF::Particle
+void Particle::AddDaughterWithEnergyFitMC(const Particle& daughter, double bz, double chi2_threshold) {
+#if KF_DEBUG
+    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+#endif
 
-    Vector<8> m;
-    SymMatrix<8> mV;
+    auto meas = GetMeasurement(daughter, bz);
 
-    Matrix<3, 3> D;
-    GetMeasurement(bz, daughter, m, mV, D);
-
-    SymMatrix<3> mS{fC[0] + mV[0],                 //
-                    fC[1] + mV[1], fC[2] + mV[2],  //
-                    fC[3] + mV[3], fC[4] + mV[4], fC[5] + mV[5]};
+    SymMatrix<3> mS{meas.C1[0] + meas.C2[0],                           //
+                    meas.C1[1] + meas.C2[1], meas.C1[2] + meas.C2[2],  //
+                    meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
     InvertCholesky3(mS);
 
-    // Residual (measured - estimated)
-    Vector<3> zeta{m[0] - fP[0], m[1] - fP[1], m[2] - fP[2]};
+    Vector<3> zeta{meas.P2[0] - meas.P1[0], meas.P2[1] - meas.P1[1], meas.P2[2] - meas.P1[2]};
+    double dChi2{(mS[0] * zeta[0] + mS[1] * zeta[1] + mS[3] * zeta[2]) * zeta[0] + (mS[1] * zeta[0] + mS[2] * zeta[1] + mS[4] * zeta[2]) * zeta[1] +
+                 (mS[3] * zeta[0] + mS[4] * zeta[1] + mS[5] * zeta[2]) * zeta[2]};
+    if (dChi2 > chi2_threshold) return;
 
     Matrix<3, 3> K;
     for (int i{0}; i < 3; ++i) {
         for (int j{0}; j < 3; ++j) {
             K[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) K[i][j] += fC[IJ(i, k)] * mS[IJ(k, j)];
+            for (int k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
         }
     }
 
     // CHt = CH'
 
-    Vector<7> mCHt0{fC[0], fC[1], fC[3], fC[6], fC[10], fC[15], fC[21]};
-    Vector<7> mCHt1{fC[1], fC[2], fC[4], fC[7], fC[11], fC[16], fC[22]};
-    Vector<7> mCHt2{fC[3], fC[4], fC[5], fC[8], fC[12], fC[17], fC[23]};
+    Vector<7> mCHt0{meas.C1[0], meas.C1[1], meas.C1[3], meas.C1[6], meas.C1[10], meas.C1[15], meas.C1[21]};
+    Vector<7> mCHt1{meas.C1[1], meas.C1[2], meas.C1[4], meas.C1[7], meas.C1[11], meas.C1[16], meas.C1[22]};
+    Vector<7> mCHt2{meas.C1[3], meas.C1[4], meas.C1[5], meas.C1[8], meas.C1[12], meas.C1[17], meas.C1[23]};
 
     // Kalman gain K = mCH'*S
 
@@ -443,9 +463,9 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
 
     // VHt = VH'
 
-    Vector<7> mVHt0{mV[0], mV[1], mV[3], mV[6], mV[10], mV[15], mV[21]};
-    Vector<7> mVHt1{mV[1], mV[2], mV[4], mV[7], mV[11], mV[16], mV[22]};
-    Vector<7> mVHt2{mV[3], mV[4], mV[5], mV[8], mV[12], mV[17], mV[23]};
+    Vector<7> mVHt0{meas.C2[0], meas.C2[1], meas.C2[3], meas.C2[6], meas.C2[10], meas.C2[15], meas.C2[21]};
+    Vector<7> mVHt1{meas.C2[1], meas.C2[2], meas.C2[4], meas.C2[7], meas.C2[11], meas.C2[16], meas.C2[22]};
+    Vector<7> mVHt2{meas.C2[3], meas.C2[4], meas.C2[5], meas.C2[8], meas.C2[12], meas.C2[17], meas.C2[23]};
 
     // Kalman gain Km = mCH'*S
 
@@ -458,18 +478,18 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
         km2[i] = mVHt0[i] * mS[3] + mVHt1[i] * mS[4] + mVHt2[i] * mS[5];
     }
 
-    for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
+    for (int i{0}; i < 7; ++i) fP[i] = meas.P1[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
 
-    for (int i{0}; i < 7; ++i) m[i] = m[i] - km0[i] * zeta[0] - km1[i] * zeta[1] - km2[i] * zeta[2];
+    for (int i{0}; i < 7; ++i) meas.P2[i] = meas.P2[i] - km0[i] * zeta[0] - km1[i] * zeta[1] - km2[i] * zeta[2];
 
     for (int i{0}, k{0}; i < 7; ++i) {
         for (int j{0}; j <= i; ++j, ++k) {
-            fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
+            fC[k] = meas.C1[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
         }
     }
 
     for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) mV[k] = mV[k] - (km0[i] * mVHt0[j] + km1[i] * mVHt1[j] + km2[i] * mVHt2[j]);
+        for (int j{0}; j <= i; ++j, ++k) meas.C2[k] = meas.C2[k] - (km0[i] * mVHt0[j] + km1[i] * mVHt1[j] + km2[i] * mVHt2[j]);
     }
 
     Matrix<7, 7> mDf;
@@ -478,11 +498,11 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
         for (int j{0}; j < 7; ++j) mDf[i][j] = km0[i] * mCHt0[j] + km1[i] * mCHt1[j] + km2[i] * mCHt2[j];
     }
 
-    auto mJ1 = Zero<7, 7>();
-    auto mJ2 = Zero<7, 7>();
+    Matrix<7, 7> mJ1{};
+    Matrix<7, 7> mJ2{};
 
-    double mMassParticle{fP[6] * fP[6] - (fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5])};
-    double mMassDaughter{m[6] * m[6] - (m[3] * m[3] + m[4] * m[4] + m[5] * m[5])};
+    double mMassParticle{fP[6] * fP[6] - fP[3] * fP[3] - fP[4] * fP[4] - fP[5] * fP[5]};
+    double mMassDaughter{meas.P2[6] * meas.P2[6] - meas.P2[3] * meas.P2[3] - meas.P2[4] * meas.P2[4] - meas.P2[5] * meas.P2[5]};
     if (mMassParticle > 0.) mMassParticle = std::sqrt(mMassParticle);
     if (mMassDaughter > 0.) mMassDaughter = std::sqrt(mMassDaughter);
 
@@ -492,9 +512,9 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
         SetMassConstraint(fP, fC, mJ1, fSumDaughterMass);
 
     if (daughter.fMassHypo > -0.5)
-        SetMassConstraint(m, mV, mJ2, daughter.fMassHypo);
-    else if ((mMassDaughter < daughter.fSumDaughterMass) || (m[6] < 0.))
-        SetMassConstraint(m, mV, mJ2, daughter.fSumDaughterMass);
+        SetMassConstraint(meas.P2, meas.C2, mJ2, daughter.fMassHypo);
+    else if ((mMassDaughter < daughter.fSumDaughterMass) || (meas.P2[6] < 0.))
+        SetMassConstraint(meas.P2, meas.C2, mJ2, daughter.fSumDaughterMass);
 
     Matrix<7, 7> mDJ;
     for (int i{0}; i < 7; ++i) {
@@ -513,21 +533,21 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
 
     // Add the daughter momentum to the particle momentum
 
-    fP[3] += m[3];
-    fP[4] += m[4];
-    fP[5] += m[5];
-    fP[6] += m[6];
+    fP[3] += meas.P2[3];
+    fP[4] += meas.P2[4];
+    fP[5] += meas.P2[5];
+    fP[6] += meas.P2[6];
 
-    fC[9] += mV[9];
-    fC[13] += mV[13];
-    fC[14] += mV[14];
-    fC[18] += mV[18];
-    fC[19] += mV[19];
-    fC[20] += mV[20];
-    fC[24] += mV[24];
-    fC[25] += mV[25];
-    fC[26] += mV[26];
-    fC[27] += mV[27];
+    fC[9] += meas.C2[9];
+    fC[13] += meas.C2[13];
+    fC[14] += meas.C2[14];
+    fC[18] += meas.C2[18];
+    fC[19] += meas.C2[19];
+    fC[20] += meas.C2[20];
+    fC[24] += meas.C2[24];
+    fC[25] += meas.C2[25];
+    fC[26] += meas.C2[26];
+    fC[27] += meas.C2[27];
 
     fC[6] += mDf[3][0];
     fC[7] += mDf[3][1];
@@ -563,7 +583,7 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
     for (int i{0}; i < 3; ++i) {
         for (int j{0}; j < 3; ++j) {
             A[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) A[i][j] += D[i][k] * K2[k][j];
+            for (int k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
         }
     }
 
@@ -586,159 +606,161 @@ void Particle::AddDaughterWithEnergyFitMC(double bz, const Particle& daughter) {
 
     fNDF += 2;
     fQ += daughter.GetQ();
-    fSFromDecay = 0.;
-    fChi2 += (mS[0] * zeta[0] + mS[1] * zeta[1] + mS[3] * zeta[2]) * zeta[0] + (mS[1] * zeta[0] + mS[2] * zeta[1] + mS[4] * zeta[2]) * zeta[1] +
-             (mS[3] * zeta[0] + mS[4] * zeta[1] + mS[5] * zeta[2]) * zeta[2];
+    fChi2 += dChi2;
+#if KF_DEBUG
+    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
 }
 
-// Adds a vertex as a point-like measurement to the current particle.
+// Add a vertex as a point-like measurement to the current particle.
 // The eights parameter of the state vector is filled with the decay
 // length to the momentum ratio (s = l/p).
 // The corresponding covariances are calculated as well.
 // The parameters of the particle are stored at the position of the production vertex.
 // \param[in] vtx - the assumed production vertex
 void Particle::SetProductionVertex(const Particle& vtx, double bz) {
+    /*
+        Vector<6> m{vtx.XYZPxPyPz()};
+        SymMatrix<6> mV{vtx.Cov_6x6()};
 
-    Vector<6> m{vtx.XYZPxPyPz()};
-    SymMatrix<6> mV{vtx.Cov_6x6()};
+        Vector<3> decayPoint{fP[0], fP[1], fP[2]};
+        SymMatrix<3> decayPointCov{fC[0], fC[1], fC[2], fC[3], fC[4], fC[5]};
 
-    Vector<3> decayPoint{fP[0], fP[1], fP[2]};
-    SymMatrix<3> decayPointCov{fC[0], fC[1], fC[2], fC[3], fC[4], fC[5]};
+        auto D = Zero<6, 6>();
 
-    auto D = Zero<6, 6>();
+        bool noS{fC[35] <= 0};  // no decay length allowed
 
-    bool noS{fC[35] <= 0};  // no decay length allowed
+        if (noS) {
+            TransportToDecayVertex(bz);
+            fP[7] = 0.;
+            for (int i{28}; i < 36; ++i) fC[i] = 0.;
+        } else {
+            Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
+            double ds{GetDStoPointBz(bz, vtx.XYZ(), dsdr)};
 
-    if (noS) {
-        TransportToDecayVertex(bz);
-        fP[7] = 0.;
-        for (int i{28}; i < 36; ++i) fC[i] = 0.;
-    } else {
-        Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
-        double ds{GetDStoPointBz(bz, vtx.XYZ(), dsdr)};
+            Vector<6> dsdp{-dsdr[0], -dsdr[1], -dsdr[2], 0., 0., 0.};
 
-        Vector<6> dsdp{-dsdr[0], -dsdr[1], -dsdr[2], 0., 0., 0.};
+            auto F = Zero<6, 6>();
+            auto F1 = Zero<6, 6>();
+            TransportBz(bz, ds, dsdr, fP, fC, dsdp, F, F1);
 
-        auto F = Zero<6, 6>();
-        auto F1 = Zero<6, 6>();
-        TransportBz(bz, ds, dsdr, fP, fC, dsdp, F, F1);
+            SymMatrix<6> CTmp{MultQSQt<6>(F1, mV)};
 
-        SymMatrix<6> CTmp{MultQSQt<6>(F1, mV)};
+            for (int iC{0}; iC < 6; ++iC) fC[iC] += CTmp[iC];
 
-        for (int iC{0}; iC < 6; ++iC) fC[iC] += CTmp[iC];
-
-        for (int i{0}; i < 6; ++i) {
-            for (int j{0}; j < 3; ++j) {
-                for (int k{0}; k < 3; ++k) {
-                    D[i][j] += mV[IJ(j, k)] * F1[i][k];
+            for (int i{0}; i < 6; ++i) {
+                for (int j{0}; j < 3; ++j) {
+                    for (int k{0}; k < 3; ++k) {
+                        D[i][j] += mV[IJ(j, k)] * F1[i][k];
+                    }
                 }
             }
         }
-    }
 
-    SymMatrix<3> mS{fC[0] + mV[0],                 //
-                    fC[1] + mV[1], fC[2] + mV[2],  //
-                    fC[3] + mV[3], fC[4] + mV[4], fC[5] + mV[5]};
-    InvertCholesky3(mS);
+        SymMatrix<3> mS{fC[0] + mV[0],                 //
+                        fC[1] + mV[1], fC[2] + mV[2],  //
+                        fC[3] + mV[3], fC[4] + mV[4], fC[5] + mV[5]};
+        InvertCholesky3(mS);
 
-    Vector<3> res{m[0] - X(), m[1] - Y(), m[2] - Z()};
+        Vector<3> res{m[0] - X(), m[1] - Y(), m[2] - Z()};
 
-    Matrix<3, 3> K;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            K[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) K[i][j] += fC[IJ(i, k)] * mS[IJ(k, j)];
-        }
-    }
-
-    Vector<7> mCHt0{fC[0], fC[1], fC[3], fC[6], fC[10], fC[15], fC[21]};
-    Vector<7> mCHt1{fC[1], fC[2], fC[4], fC[7], fC[11], fC[16], fC[22]};
-    Vector<7> mCHt2{fC[3], fC[4], fC[5], fC[8], fC[12], fC[17], fC[23]};
-
-    Vector<7> k0;
-    Vector<7> k1;
-    Vector<7> k2;
-    for (int i{0}; i < 7; ++i) {
-        k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
-        k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
-        k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
-    }
-
-    for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * res[0] + k1[i] * res[1] + k2[i] * res[2];
-
-    for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) {
-            fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
-        }
-    }
-
-    Matrix<3, 3> K2;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
-        K2[i][i] += 1.;
-    }
-
-    Matrix<3, 3> A;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            A[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) A[i][j] += D[k][i] * K2[k][j];
-        }
-    }
-
-    Matrix<3, 3> M;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            M[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
-        }
-    }
-
-    fC[0] += 2. * M[0][0];
-    fC[1] += M[0][1] + M[1][0];
-    fC[2] += 2. * M[1][1];
-    fC[3] += M[0][2] + M[2][0];
-    fC[4] += M[1][2] + M[2][1];
-    fC[5] += 2. * M[2][2];
-
-    fChi2 += (mS[0] * res[0] + mS[1] * res[1] + mS[3] * res[2]) * res[0] + (mS[1] * res[0] + mS[2] * res[1] + mS[4] * res[2]) * res[1] +
-             (mS[3] * res[0] + mS[4] * res[1] + mS[5] * res[2]) * res[2];
-    fNDF += 2;
-
-    if (noS) {
-        fP[7] = 0.;
-        for (int i{28}; i < 36; ++i) fC[i] = 0.;
-        fSFromDecay = 0.;
-    } else {
-        Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
-        fP[7] = GetDStoPointBz(bz, decayPoint, dsdr);
-
-        Vector<6> dsdp{-dsdr[0], -dsdr[1], -dsdr[2], 0., 0., 0.};
-
-        auto F = Zero<6, 6>();
-        auto F1 = Zero<6, 6>();
-        Vector<8> tmpP;
-        SymMatrix<8> tmpC;
-        TransportBz(bz, fP[7], dsdr, tmpP, tmpC, dsdp, F, F1);
-
-        fC[35] = 0.;
-        for (int iDsDr{0}; iDsDr < 6; ++iDsDr) {
-            double dsdrC{0.};
-            double dsdpV{0.};
-
-            for (int k{0}; k < 6; ++k) dsdrC += dsdr[k] * fC[IJ(k, iDsDr)];  // (-dsdr[k])*fC[k,j]
-
-            fC[iDsDr + 28] = dsdrC;
-            fC[35] += dsdrC * dsdr[iDsDr];
-            if (iDsDr < 3) {
-                for (int k{0}; k < 3; ++k) dsdpV -= dsdr[k] * decayPointCov[IJ(k, iDsDr)];
-                fC[35] -= dsdpV * dsdr[iDsDr];
+        Matrix<3, 3> K;
+        for (int i{0}; i < 3; ++i) {
+            for (int j{0}; j < 3; ++j) {
+                K[i][j] = 0.;
+                for (int k{0}; k < 3; ++k) K[i][j] += fC[IJ(i, k)] * mS[IJ(k, j)];
             }
         }
-        fSFromDecay = -fP[7];
-    }
 
-    fAtProductionVertex = true;
+        Vector<7> mCHt0{fC[0], fC[1], fC[3], fC[6], fC[10], fC[15], fC[21]};
+        Vector<7> mCHt1{fC[1], fC[2], fC[4], fC[7], fC[11], fC[16], fC[22]};
+        Vector<7> mCHt2{fC[3], fC[4], fC[5], fC[8], fC[12], fC[17], fC[23]};
+
+        Vector<7> k0;
+        Vector<7> k1;
+        Vector<7> k2;
+        for (int i{0}; i < 7; ++i) {
+            k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
+            k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
+            k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
+        }
+
+        for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * res[0] + k1[i] * res[1] + k2[i] * res[2];
+
+        for (int i{0}, k{0}; i < 7; ++i) {
+            for (int j{0}; j <= i; ++j, ++k) {
+                fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
+            }
+        }
+
+        Matrix<3, 3> K2;
+        for (int i{0}; i < 3; ++i) {
+            for (int j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
+            K2[i][i] += 1.;
+        }
+
+        Matrix<3, 3> A;
+        for (int i{0}; i < 3; ++i) {
+            for (int j{0}; j < 3; ++j) {
+                A[i][j] = 0.;
+                for (int k{0}; k < 3; ++k) A[i][j] += D[k][i] * K2[k][j];
+            }
+        }
+
+        Matrix<3, 3> M;
+        for (int i{0}; i < 3; ++i) {
+            for (int j{0}; j < 3; ++j) {
+                M[i][j] = 0.;
+                for (int k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
+            }
+        }
+
+        fC[0] += 2. * M[0][0];
+        fC[1] += M[0][1] + M[1][0];
+        fC[2] += 2. * M[1][1];
+        fC[3] += M[0][2] + M[2][0];
+        fC[4] += M[1][2] + M[2][1];
+        fC[5] += 2. * M[2][2];
+
+        fChi2 += (mS[0] * res[0] + mS[1] * res[1] + mS[3] * res[2]) * res[0] + (mS[1] * res[0] + mS[2] * res[1] + mS[4] * res[2]) * res[1] +
+                 (mS[3] * res[0] + mS[4] * res[1] + mS[5] * res[2]) * res[2];
+        fNDF += 2;
+
+        if (noS) {
+            fP[7] = 0.;
+            for (int i{28}; i < 36; ++i) fC[i] = 0.;
+            fSFromDecay = 0.;
+        } else {
+            Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
+            fP[7] = GetDStoPointBz(bz, decayPoint, dsdr);
+
+            Vector<6> dsdp{-dsdr[0], -dsdr[1], -dsdr[2], 0., 0., 0.};
+
+            auto F = Zero<6, 6>();
+            auto F1 = Zero<6, 6>();
+            Vector<8> tmpP;
+            SymMatrix<8> tmpC;
+            TransportBz(bz, fP[7], dsdr, tmpP, tmpC, dsdp, F, F1);
+
+            fC[35] = 0.;
+            for (int iDsDr{0}; iDsDr < 6; ++iDsDr) {
+                double dsdrC{0.};
+                double dsdpV{0.};
+
+                for (int k{0}; k < 6; ++k) dsdrC += dsdr[k] * fC[IJ(k, iDsDr)];  // (-dsdr[k])*fC[k,j]
+
+                fC[iDsDr + 28] = dsdrC;
+                fC[35] += dsdrC * dsdr[iDsDr];
+                if (iDsDr < 3) {
+                    for (int k{0}; k < 3; ++k) dsdpV -= dsdr[k] * decayPointCov[IJ(k, iDsDr)];
+                    fC[35] -= dsdpV * dsdr[iDsDr];
+                }
+            }
+            fSFromDecay = -fP[7];
+        }
+
+        fAtProductionVertex = true;
+        */
 }
 
 // Set the exact nonlinear mass constraint on the state vector mP with the covariance matrix mC.
@@ -797,7 +819,7 @@ void Particle::SetMassConstraint(Vector<8>& mP, SymMatrix<8>& mC, Matrix<7, 7>& 
 
     Vector<4> dxx{mP[3] * lm2i, mP[4] * lm2i, mP[5] * lm2i, -mP[6] * lp2i};
 
-    mJ = Zero<7, 7>();
+    // mJ = Zero<7, 7>(); // PENDING
     mJ[0][0] = 1.;
     mJ[1][1] = 1.;
     mJ[2][2] = 1.;
@@ -849,7 +871,7 @@ void Particle::SetNonlinearMassConstraint(double mass) {
     fChi2 += residual * residual / dm2;
     fNDF += 1;
 
-    Matrix<7, 7> mJ;
+    Matrix<7, 7> mJ{};
     SetMassConstraint(fP, fC, mJ, mass);
     fMassHypo = mass;
     fSumDaughterMass = mass;
@@ -874,7 +896,7 @@ void Particle::SetMassConstraint(double mass, double sigma_mass) {
     double zeta{e0 * e0 - e0 * fP[6]};
     zeta = m2 - (fP[6] * fP[6] - p2);
 
-    auto mCHt = Zero<8>();
+    Vector<8> mCHt;
     double s2_est{0.};
     for (int i{0}; i < 8; ++i) {
         for (int j{0}; j < 8; ++j) mCHt[i] += Cij(i, j) * mH[j];
@@ -895,109 +917,44 @@ void Particle::SetMassConstraint(double mass, double sigma_mass) {
     }
 }
 
-// set constraint on the zero decay length. When the production point is set
-// the measurement from this particle is created at the decay point.
-void Particle::SetNoDecayLength(double bz) {
-
-    TransportToDecayVertex(bz);
-
-    Vector<8> h{0., 0., 0., 0., 0., 0., 0., 1.};
-
-    double zeta{-fP[7]};
-    for (int i{0}; i < 8; ++i) zeta -= h[i] * (fP[i] - fP[i]);
-
-    double s{fC[35]};
-    if (s > 1.e-20) {
-        s = 1. / s;
-        fChi2 += zeta * zeta * s;
-        fNDF += 1;
-        for (int i{0}, ii{0}; i < 7; ++i) {
-            double ki{fC[28 + i] * s};
-            fP[i] += ki * zeta;
-            for (int j{0}; j <= i; ++j) fC[++ii] -= ki * fC[28 + j];
-        }
-    }
-    fP[7] = 0.;
-    for (int i{28}; i < 36; ++i) fC[i] = 0.;
-}
-
-// Constructs a short-lived particle from a set of daughter particles:
-// 1) all parameters of the "this" objects are initialised;
-// 2) daughters are added one after another;
-// 3) if Parent pointer is not null, the production vertex is set to it;
-// 4) if Mass hypothesis >=0 the mass constraint is set.
-// \param[in] v_daughters - array of daughter particles
-// \param[in] n_daughters - number of daughter particles in the input array
-// \param[in] parent - optional parrent particle
-// \param[in] mass - optional mass hypothesis
-void Particle::Construct(double bz, const Particle* v_daughters[], int n_daughters, const Particle* parent, double mass) {
-
-    fAtProductionVertex = false;
-    fSFromDecay = 0;
-    fSumDaughterMass = 0;
-
-    for (int i{0}; i < 36; ++i) fC[i] = 0.;
-    fC[35] = 1.;
-
-    fNDF = -3;
-    fChi2 = 0.;
-    fQ = 0;
-
-    for (int itr{0}; itr < n_daughters; ++itr) {
-        AddDaughter(bz, *v_daughters[itr]);
-    }
-
-    if (mass >= 0) SetMassConstraint(mass);
-    if (parent) SetProductionVertex(*parent, bz);
-}
-
-// Transports the particle to its decay vertex
-void Particle::TransportToDecayVertex(double bz) {
-    Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
-    if (fSFromDecay != 0) TransportToDS(bz, -fSFromDecay, dsdr);
-    fAtProductionVertex = false;
-}
-
-// Transports the particle to its production vertex
-void Particle::TransportToProductionVertex(double bz) {
-    Vector<6> dsdr{0., 0., 0., 0., 0., 0.};
-    if (fSFromDecay != -fP[7]) TransportToDS(bz, -fSFromDecay - fP[7], dsdr);
-    fAtProductionVertex = true;
-}
-
-// Transport the particle on a certain distance. The distance is defined by the dS=l/p parameter, where
-// 1) l - signed distance
-// 2) p - momentum of the particle
-// \param[in] dS = l/p - distance normalised to the momentum of the particle to be transported on
-// \param[in] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-void Particle::TransportToDS(double bz, double ds, const Vector<6>& dsdr) {
-    Vector<6> dummy_dsdr;
-    Matrix<6, 6> dummy_jacob;
-    Matrix<6, 6> dummy_corr;
-    TransportBz(bz, ds, dsdr, fP, fC, dummy_dsdr, dummy_jacob, dummy_corr);
-    fSFromDecay += ds;
-}
-
 // Return dS = l/p parameter, where
 // 1) l - signed distance to the DCA point with the input xyz point;
 // 2) p - momentum of the particle;
 // assuming the straigth line trajectory. Is used for particles with charge 0 or in case of zero magnetic field.
 // Also calculate partial derivatives dsdr of the parameter dS over the state vector of the current particle.
-// \param[in] xyz[3] - point where particle should be transported
-// \param[out] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-double Particle::GetDStoPointLine(const Vector<3>& xyz, Vector<6>& ds_dr) const {
+// Input:
+// - xyz[3] - point where particle should be transported
+// Return:
+// - dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
+// TO CONSIDER: p2 and (p2*p2) cannot be zero
+Result::MinPart2Vtx Particle::MinimizeLinePoint(const Vector<3>& xyz) const {
 
-    double p2{fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]};
+    double x0{fP[0]};
+    double y0{fP[1]};
+    double z0{fP[2]};
+    double px0{fP[3]};
+    double py0{fP[4]};
+    double pz0{fP[5]};
+    double dx{xyz[0] - x0};
+    double dy{xyz[1] - y0};
+    double dz{xyz[2] - z0};
 
-    double a{fP[3] * (xyz[0] - fP[0]) + fP[4] * (xyz[1] - fP[1]) + fP[5] * (xyz[2] - fP[2])};
-    ds_dr[0] = -fP[3] / p2;
-    ds_dr[1] = -fP[4] / p2;
-    ds_dr[2] = -fP[5] / p2;
-    ds_dr[3] = ((xyz[0] - fP[0]) * p2 - 2. * fP[3] * a) / (p2 * p2);
-    ds_dr[4] = ((xyz[1] - fP[1]) * p2 - 2. * fP[4] * a) / (p2 * p2);
-    ds_dr[5] = ((xyz[2] - fP[2]) * p2 - 2. * fP[5] * a) / (p2 * p2);
+    double p2{px0 * px0 + py0 * py0 + pz0 * pz0};
+    double a{px0 * dx + py0 * dy + pz0 * dz};
 
-    return a / p2;
+    Result::MinPart2Vtx min;
+    min.ds = a / p2;
+    min.ds_dr[0] = -px0 / p2;
+    min.ds_dr[1] = -py0 / p2;
+    min.ds_dr[2] = -pz0 / p2;
+    min.ds_dr[3] = (dx * p2 - 2. * px0 * a) / (p2 * p2);
+    min.ds_dr[4] = (dy * p2 - 2. * py0 * a) / (p2 * p2);
+    min.ds_dr[5] = (dz * p2 - 2. * pz0 * a) / (p2 * p2);
+    min.pca[0] = x0 + px0 * min.ds;
+    min.pca[1] = y0 + py0 * min.ds;
+    min.pca[2] = z0 + pz0 * min.ds;
+
+    return min;
 }
 
 // return dS = l/p parameter, where
@@ -1008,9 +965,9 @@ double Particle::GetDStoPointLine(const Vector<3>& xyz, Vector<6>& ds_dr) const 
 // \param[in] bz - magnetic field Bz
 // \param[in] xyz[3] - point, to which particle should be transported
 // \param[out] dsdr[6] = ds/dr partial derivatives of the parameter dS over the state vector of the current particle
-double Particle::GetDStoPointBz(double bz, const Vector<3>& xyz, Vector<6>& ds_dr) const {
+Result::MinPart2Vtx Particle::MinimizeHelixPoint(const Vector<3>& xyz, double bz) const {
 
-    double ds{0.};
+    Result::MinPart2Vtx min;
 
     // 1. find min. distance in XY plane //
 
@@ -1031,11 +988,11 @@ double Particle::GetDStoPointBz(double bz, const Vector<3>& xyz, Vector<6>& ds_d
 
     double abq{bq * a};
 
-    ds = std::atan2(abq, pt2 + bq * (dy * px - dx * py)) / bq;
+    min.ds = std::atan2(abq, pt2 + bq * (dy * px - dx * py)) / bq;
 
     // 2. add z-component as small correction //
 
-    double bs{bq * ds};
+    double bs{bq * min.ds};
 
     double s{std::sin(bs)};
     double c{std::cos(bs)};
@@ -1046,29 +1003,29 @@ double Particle::GetDStoPointBz(double bz, const Vector<3>& xyz, Vector<6>& ds_d
     double den{abq * abq + bbq * bbq};
     den = den < Const::AbsAlmostZero ? Const::AbsAlmostZero : den;
 
-    ds_dr[0] = (px * bbq - py * abq) / den;
-    ds_dr[1] = (px * abq + py * bbq) / den;
-    ds_dr[2] = 0.;
-    ds_dr[3] = -(dx * bbq + dy * abq + 2. * px * a) / den;
-    ds_dr[4] = (dx * abq - dy * bbq - 2. * py * a) / den;
-    ds_dr[5] = 0.;
+    min.ds_dr[0] = (px * bbq - py * abq) / den;
+    min.ds_dr[1] = (px * abq + py * bbq) / den;
+    min.ds_dr[2] = 0.;
+    min.ds_dr[3] = -(dx * bbq + dy * abq + 2. * px * a) / den;
+    min.ds_dr[4] = (dx * abq - dy * bbq - 2. * py * a) / den;
+    min.ds_dr[5] = 0.;
 
     double sz{0.};
     double cCoeff{(bbq * c - abq * s) - pz * pz};
-    if (std::abs(cCoeff) > Const::AbsAlmostZero) sz = (ds * pz - dz) * pz / cCoeff;
+    if (std::abs(cCoeff) > Const::AbsAlmostZero) sz = (min.ds * pz - dz) * pz / cCoeff;
 
-    Vector<6> dcdr{-bq * py * c - bbq * s * bq * ds_dr[0] + px * bq * s - abq * c * bq * ds_dr[0],
-                   bq * px * c - bbq * s * bq * ds_dr[1] + py * bq * s - abq * c * bq * ds_dr[1],
+    Vector<6> dcdr{-bq * py * c - bbq * s * bq * min.ds_dr[0] + px * bq * s - abq * c * bq * min.ds_dr[0],
+                   bq * px * c - bbq * s * bq * min.ds_dr[1] + py * bq * s - abq * c * bq * min.ds_dr[1],
                    0.,
-                   (-bq * dy - 2. * px) * c - bbq * s * bq * ds_dr[3] - dx * bq * s - abq * c * bq * ds_dr[3],
-                   (bq * dx - 2. * py) * c - bbq * s * bq * ds_dr[4] - dy * bq * s - abq * c * bq * ds_dr[4],
+                   (-bq * dy - 2. * px) * c - bbq * s * bq * min.ds_dr[3] - dx * bq * s - abq * c * bq * min.ds_dr[3],
+                   (bq * dx - 2. * py) * c - bbq * s * bq * min.ds_dr[4] - dy * bq * s - abq * c * bq * min.ds_dr[4],
                    -2. * pz};
 
-    for (int iP{0}; iP < 6; ++iP) ds_dr[iP] += pz * pz / cCoeff * ds_dr[iP] - sz / cCoeff * dcdr[iP];
-    ds_dr[2] += pz / cCoeff;
-    ds_dr[5] += (2. * pz * ds - dz) / cCoeff;
+    for (int iP{0}; iP < 6; ++iP) min.ds_dr[iP] += pz * pz / cCoeff * min.ds_dr[iP] - sz / cCoeff * dcdr[iP];
+    min.ds_dr[2] += pz / cCoeff;
+    min.ds_dr[5] += (2. * pz * min.ds - dz) / cCoeff;
 
-    ds += sz;
+    min.ds += sz;
 
     /*
     bs = bq * dS;
@@ -1094,7 +1051,7 @@ double Particle::GetDStoPointBz(double bz, const Vector<3>& xyz, Vector<6>& ds_d
     dS += std::atan2(abq, p2 + bq * (dy * p[3] - dx * p[4])) / bq;
     */
 
-    return ds;
+    return min;
 }
 
 // Calculate dS = l/p parameters for two particles, where
@@ -1110,60 +1067,57 @@ double Particle::GetDStoPointBz(double bz, const Vector<3>& xyz, Vector<6>& ds_d
 // where param1 are parameters of the current particle (if the pointer is not provided it is initialised with fP) and
 // param2 are parameters of the second particle "p" (if the pointer is not provided it is initialised with p.fP). Parameters
 // param1 and param2 should be either provided both or both set to null pointers.
+// Input:
 // \param[in] Bz - magnetic field Bz
 // \param[in] p - second particle
+// Return:
 // \param[out] dS[2] - transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
 // \param[out] dsdr[4][6] - partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
 // \param[in] param1 - optional parameter, is used in case if the parameters of the current particles are rotated
 // to other coordinate system (see GetDStoParticleBy() function), otherwise fP are used
 // \param[in] param2 - optional parameter, is used in case if the parameters of the second particles are rotated
 // to other coordinate system (see GetDStoParticleBy() function), otherwise p.fP are used
-void Particle::GetDStoParticleBz(double bz, const Particle& p, double ds[2], Vector<6> ds_dr[4]) const {
+std::pair<Result::MinPart2Part, Result::MinPart2Part> Particle::MinimizeHelixHelix(const Particle& p, double bz) const {
+#if KF_DEBUG
+    std::cout << "-- starting (MinimizeHelixHelix) --" << '\n';
+#endif
 
-    // 1. find minimum distance in XY plane //
+    Result::MinPart2Part min1;
+    Result::MinPart2Part min2;
+
+    // 1 -- find points of closest approach (PCAs) in XY plane //
 
     double bq1{bz * fQ * Const::Kappa};
     double bq2{bz * p.fQ * Const::Kappa};
 
     bool isStraight1{std::abs(bq1) < Const::AbsAlmostZero};
     bool isStraight2{std::abs(bq2) < Const::AbsAlmostZero};
+    if (isStraight1 && isStraight2) return MinimizeLineLine(p);
 
-    if (isStraight1 && isStraight2) {
-        GetDStoParticleLine(p, ds, ds_dr);
-        return;
-    }
-
-    double px1{fP[3]};
-    double py1{fP[4]};
-    double pz1{fP[5]};
-
-    double px2{p.fP[3]};
-    double py2{p.fP[4]};
-    double pz2{p.fP[5]};
-
-    double pt12{px1 * px1 + py1 * py1};
-    double pt22{px2 * px2 + py2 * py2};
-
-    double x01{fP[0]};
-    double y01{fP[1]};
-    double z01{fP[2]};
-
-    double x02{p.fP[0]};
-    double y02{p.fP[1]};
-    double z02{p.fP[2]};
-
-    double ds1[2]{0., 0.};
-    double ds2[2]{0., 0.};
+    double px01{Px()};
+    double py01{Py()};
+    double pz01{Pz()};
+    double px02{p.Px()};
+    double py02{p.Py()};
+    double pz02{p.Pz()};
+    double pt12{px01 * px01 + py01 * py01};
+    double pt22{px02 * px02 + py02 * py02};
+    double x01{X()};
+    double y01{Y()};
+    double z01{Z()};
+    double x02{p.X()};
+    double y02{p.Y()};
+    double z02{p.Z()};
 
     double dx0{x01 - x02};
     double dy0{y01 - y02};
     double dr02{dx0 * dx0 + dy0 * dy0};
-    double drp1{dx0 * px1 + dy0 * py1};
-    double dxyp1{dx0 * py1 - dy0 * px1};
-    double drp2{dx0 * px2 + dy0 * py2};
-    double dxyp2{dx0 * py2 - dy0 * px2};
-    double p1p2{px1 * px2 + py1 * py2};
-    double dp1p2{px1 * py2 - px2 * py1};
+    double drp1{dx0 * px01 + dy0 * py01};
+    double dxyp1{dx0 * py01 - dy0 * px01};
+    double drp2{dx0 * px02 + dy0 * py02};
+    double dxyp2{dx0 * py02 - dy0 * px02};
+    double p1p2{px01 * px02 + py01 * py02};
+    double dp1p2{px01 * py02 - px02 * py01};
 
     double k11{bq2 * drp1 - dp1p2};
     double k21{bq1 * (bq2 * dxyp1 - p1p2) + bq2 * pt12};
@@ -1172,361 +1126,252 @@ void Particle::GetDStoParticleBz(double bz, const Particle& p, double ds[2], Vec
 
     double kp{dxyp1 * bq2 - dxyp2 * bq1 - p1p2};
     double kd{dr02 * bq1 * bq2 / 2. + kp};
-    double c1{-(bq1 * kd + pt12 * bq2)};
+    double c1{-bq1 * kd - pt12 * bq2};
     double c2{bq2 * kd + pt22 * bq1};
 
     double d1{std::max(pt12 * pt22 - kd * kd, 0.)};
     d1 = std::sqrt(d1);
 
-    double ds1dR1[2][6];
-    double ds2dR2[2][6];
+    // 1.a -- select solution with minimum distance in 3D  //
 
-    double ds1dR2[2][6];
-    double ds2dR1[2][6];
+    double dx{0.};
+    double dy{0.};
+    double dz{0.};
 
-    Vector<6> dk11dr1{bq2 * px1, bq2 * py1, 0., bq2 * dx0 - py2, bq2 * dy0 + px2, 0.};
-    Vector<6> dk11dr2{-bq2 * px1, -bq2 * py1, 0., py1, -px1, 0.};
-    Vector<6> dk12dr1{bq1 * px2, bq1 * py2, 0., -py2, px2, 0.};
-    Vector<6> dk12dr2{-bq1 * px2, -bq1 * py2, 0., bq1 * dx0 + py1, bq1 * dy0 - px1, 0.};
-    Vector<6> dk21dr1{
-        bq1 * bq2 * py1, -bq1 * bq2 * px1, 0., 2. * bq2 * px1 + bq1 * (-(bq2 * dy0) - px2), 2. * bq2 * py1 + bq1 * (bq2 * dx0 - py2), 0.};
-    Vector<6> dk21dr2{-(bq1 * bq2 * py1), bq1 * bq2 * px1, 0., -(bq1 * px1), -(bq1 * py1), 0.};
-    Vector<6> dk22dr1{bq1 * bq2 * py2, -(bq1 * bq2 * px2), 0., bq2 * px2, bq2 * py2, 0.};
-    Vector<6> dk22dr2{
-        -(bq1 * bq2 * py2), bq1 * bq2 * px2, 0., bq2 * (-(bq1 * dy0) + px1) - 2. * bq1 * px2, bq2 * (bq1 * dx0 + py1) - 2. * bq1 * py2, 0.};
+    int w_sign{+1};  // winner sign
+    double dca_sq{std::numeric_limits<double>::max()};
 
-    Vector<6> dkddr1{bq1 * bq2 * dx0 + bq2 * py1 - bq1 * py2, bq1 * bq2 * dy0 - bq2 * px1 + bq1 * px2, 0., -bq2 * dy0 - px2, bq2 * dx0 - py2, 0.};
-    Vector<6> dkddr2{-bq1 * bq2 * dx0 - bq2 * py1 + bq1 * py2, -bq1 * bq2 * dy0 + bq2 * px1 - bq1 * px2, 0., bq1 * dy0 - px1, -bq1 * dx0 - py1, 0.};
+    for (auto sign : {+1, -1}) {
+        // particle 1 //
+        Cache tmp1;
+        if (!isStraight1) {
+            tmp1.theta = std::atan2(bq1 * (k11 * c1 + sign * k21 * d1), sign * bq1 * k11 * d1 * bq1 - k21 * c1);
+            std::tie(tmp1.sin, tmp1.cos) = sincos(tmp1.theta);
+            tmp1.sB = tmp1.sin / bq1;
+            tmp1.cB = (1. - tmp1.cos) / bq1;
+            tmp1.ds = tmp1.theta / bq1;
 
-    Vector<6> dc1dr1{-(bq1 * (bq1 * bq2 * dx0 + bq2 * py1 - bq1 * py2)), -(bq1 * (bq1 * bq2 * dy0 - bq2 * px1 + bq1 * px2)), 0.,
-                     -2. * bq2 * px1 - bq1 * (-(bq2 * dy0) - px2),       -2. * bq2 * py1 - bq1 * (bq2 * dx0 - py2),          0.};
-    Vector<6> dc1dr2{-(bq1 * (-(bq1 * bq2 * dx0) - bq2 * py1 + bq1 * py2)),
-                     -(bq1 * (-(bq1 * bq2 * dy0) + bq2 * px1 - bq1 * px2)),
-                     0.,
-                     -(bq1 * (bq1 * dy0 - px1)),
-                     -(bq1 * (-(bq1 * dx0) - py1)),
-                     0.};
-
-    Vector<6> dc2dr1{bq2 * (bq1 * bq2 * dx0 + bq2 * py1 - bq1 * py2),
-                     bq2 * (bq1 * bq2 * dy0 - bq2 * px1 + bq1 * px2),
-                     0.,
-                     bq2 * (-(bq2 * dy0) - px2),
-                     bq2 * (bq2 * dx0 - py2),
-                     0.};
-    Vector<6> dc2dr2{bq2 * (-(bq1 * bq2 * dx0) - bq2 * py1 + bq1 * py2), bq2 * (-(bq1 * bq2 * dy0) + bq2 * px1 - bq1 * px2), 0.,
-                     bq2 * (bq1 * dy0 - px1) + 2. * bq1 * px2,           bq2 * (-(bq1 * dx0) - py1) + 2. * bq1 * py2,        0.};
-    Vector<6> dd1dr1{0., 0., 0., 0., 0., 0.};
-    Vector<6> dd1dr2{0., 0., 0., 0., 0., 0.};
-    if (d1 > 0) {
-        for (int i{0}; i < 6; ++i) {
-            dd1dr1[i] = -kd / d1 * dkddr1[i];
-            dd1dr2[i] = -kd / d1 * dkddr2[i];
+            tmp1.pca[0] = x01 + tmp1.sB * px01 + tmp1.cB * py01;
+            tmp1.pca[1] = y01 - tmp1.cB * px01 + tmp1.sB * py01;
+            tmp1.pca[2] = z01 + tmp1.ds * pz01;
+            tmp1.dir[0] = tmp1.cos * px01 + tmp1.sin * py01;
+            tmp1.dir[1] = -tmp1.sin * px01 + tmp1.cos * py01;
+            tmp1.dir[2] = pz01;
+        } else {
+            tmp1.ds = (k11 * c1 + sign * k21 * d1) / (-k21 * c1);
+            tmp1.pca[0] = x01 + px01 * tmp1.ds;
+            tmp1.pca[1] = y01 + py01 * tmp1.ds;
+            tmp1.pca[2] = z01 + pz01 * tmp1.ds;
         }
-        dd1dr1[3] += px1 / d1 * pt22;
-        dd1dr1[4] += py1 / d1 * pt22;
-        dd1dr2[3] += px2 / d1 * pt12;
-        dd1dr2[4] += py2 / d1 * pt12;
+
+        // particle 2 //
+        Cache tmp2;
+        if (!isStraight2) {
+            tmp2.theta = std::atan2(bq2 * (k12 * c2 + sign * k22 * d1), sign * bq2 * k12 * d1 * bq2 - k22 * c2);
+            std::tie(tmp2.sin, tmp2.cos) = sincos(tmp2.theta);
+            tmp2.sB = tmp2.sin / bq2;
+            tmp2.cB = (1. - tmp2.cos) / bq2;
+            tmp2.ds = tmp2.theta / bq2;
+
+            tmp2.pca[0] = x02 + tmp2.sB * px02 + tmp2.cB * py02;
+            tmp2.pca[1] = y02 - tmp2.cB * px02 + tmp2.sB * py02;
+            tmp2.pca[2] = z02 + tmp2.ds * pz02;
+            tmp2.dir[0] = tmp2.cos * px02 + tmp2.sin * py02;
+            tmp2.dir[1] = -tmp2.sin * px02 + tmp2.cos * py02;
+            tmp2.dir[2] = pz02;
+        } else {
+            tmp2.ds = (k12 * c2 + sign * k22 * d1) / (-k22 * c2);
+            tmp2.pca[0] = x02 + px02 * tmp2.ds;
+            tmp2.pca[1] = y02 + py02 * tmp2.ds;
+            tmp2.pca[2] = z02 + pz02 * tmp2.ds;
+        }
+
+        Vector<3> tmp_diff{tmp2.pca};
+        for (int i{0}; i < 3; ++i) tmp_diff[i] -= tmp1.pca[i];
+        double tmp_dca_sq{squaredNorm(tmp_diff)};
+
+        // store //
+        if (tmp_dca_sq < dca_sq) {
+            static_cast<Cache&>(min1) = tmp1;
+            static_cast<Cache&>(min2) = tmp2;
+
+            dx = tmp_diff[0];
+            dy = tmp_diff[1];
+            dz = tmp_diff[2];
+
+            w_sign = sign;
+            dca_sq = tmp_dca_sq;
+        }
     }
 #if KF_DEBUG
-    PrintVector<6>("(GetDStoParticleBz) dk11dr1", dk11dr1);
-    PrintVector<6>("(GetDStoParticleBz) dk11dr2", dk11dr2);
-    PrintVector<6>("(GetDStoParticleBz) dk12dr1", dk12dr1);
-    PrintVector<6>("(GetDStoParticleBz) dk12dr2", dk12dr2);
-    PrintVector<6>("(GetDStoParticleBz) dk21dr1", dk21dr1);
-    PrintVector<6>("(GetDStoParticleBz) dk21dr2", dk21dr2);
-    PrintVector<6>("(GetDStoParticleBz) dk22dr1", dk22dr1);
-    PrintVector<6>("(GetDStoParticleBz) dk22dr2", dk22dr2);
-    PrintVector<6>("(GetDStoParticleBz) dkddr1", dkddr1);
-    PrintVector<6>("(GetDStoParticleBz) dkddr2", dkddr2);
-    PrintVector<6>("(GetDStoParticleBz) dc1dr1", dc1dr1);
-    PrintVector<6>("(GetDStoParticleBz) dc1dr2", dc1dr2);
-    PrintVector<6>("(GetDStoParticleBz) dc2dr1", dc2dr1);
-    PrintVector<6>("(GetDStoParticleBz) dc2dr2", dc2dr2);
-    PrintVector<6>("(GetDStoParticleBz) dd1dr1", dd1dr1);
-    PrintVector<6>("(GetDStoParticleBz) dd1dr2", dd1dr2);
+    std::cout << "(MinimizeHelixHelix) min1.ds (no z-correction) = " << min1.ds << '\n';
+    PrintVector<3>("(MinimizeHelixHelix) min1.(x,y,z)", min1.pca);
+    std::cout << "(MinimizeHelixHelix) min2.ds (no z-correction) = " << min2.ds << '\n';
+    PrintVector<3>("(MinimizeHelixHelix) min2.(x,y,z)", min2.pca);
+    std::cout << "(MinimizeHelixHelix) dx = " << dx << '\n';
+    std::cout << "(MinimizeHelixHelix) dy = " << dy << '\n';
+    std::cout << "(MinimizeHelixHelix) dz = " << dz << '\n';
+    std::cout << "(MinimizeHelixHelix) w_sign = " << w_sign << '\n';
+    PrintValue(__FUNCTION__, "dca", std::sqrt(dca_sq));
+#endif
+
+    // 1.b -- handle derivatives //
+
+    Vector<6> dk11dr1{bq2 * px01, bq2 * py01, 0., bq2 * dx0 - py02, bq2 * dy0 + px02, 0.};
+    Vector<6> dk11dr2{-bq2 * px01, -bq2 * py01, 0., py01, -px01, 0.};
+    Vector<6> dk12dr1{bq1 * px02, bq1 * py02, 0., -py02, px02, 0.};
+    Vector<6> dk12dr2{-bq1 * px02, -bq1 * py02, 0., bq1 * dx0 + py01, bq1 * dy0 - px01, 0.};
+    Vector<6> dk21dr1{
+        bq1 * bq2 * py01, -bq1 * bq2 * px01, 0., 2. * bq2 * px01 + bq1 * (-(bq2 * dy0) - px02), 2. * bq2 * py01 + bq1 * (bq2 * dx0 - py02), 0.};
+    Vector<6> dk21dr2{-(bq1 * bq2 * py01), bq1 * bq2 * px01, 0., -(bq1 * px01), -(bq1 * py01), 0.};
+    Vector<6> dk22dr1{bq1 * bq2 * py02, -(bq1 * bq2 * px02), 0., bq2 * px02, bq2 * py02, 0.};
+    Vector<6> dk22dr2{
+        -(bq1 * bq2 * py02), bq1 * bq2 * px02, 0., bq2 * (-(bq1 * dy0) + px01) - 2. * bq1 * px02, bq2 * (bq1 * dx0 + py01) - 2. * bq1 * py02, 0.};
+
+    Vector<6> dkddr1{
+        bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02, bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02, 0., -bq2 * dy0 - px02, bq2 * dx0 - py02, 0.};
+    Vector<6> dkddr2{
+        -bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02, -bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02, 0., bq1 * dy0 - px01, -bq1 * dx0 - py01, 0.};
+
+    Vector<6> dc1dr1{-(bq1 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02)), -(bq1 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02)), 0.,
+                     -2. * bq2 * px01 - bq1 * (-bq2 * dy0 - px02),         -2. * bq2 * py01 - bq1 * (bq2 * dx0 - py02),          0.};
+    Vector<6> dc1dr2{-bq1 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02),
+                     -bq1 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02),
+                     0.,
+                     -bq1 * (bq1 * dy0 - px01),
+                     -bq1 * (-bq1 * dx0 - py01),
+                     0.};
+    Vector<6> dc2dr1{bq2 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02),
+                     bq2 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02),
+                     0.,
+                     bq2 * (-bq2 * dy0 - px02),
+                     bq2 * (bq2 * dx0 - py02),
+                     0.};
+    Vector<6> dc2dr2{bq2 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02), bq2 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02), 0.,
+                     bq2 * (bq1 * dy0 - px01) + 2 * bq1 * px02,          bq2 * (-(bq1 * dx0) - py01) + 2 * bq1 * py02,       0.};
+    Vector<6> dd1dr1{};
+    Vector<6> dd1dr2{};
+    if (d1 > 0.) {
+        for (int i{0}; i < 6; ++i) {
+            dd1dr1[i] = -kd * dkddr1[i] / d1;
+            dd1dr2[i] = -kd * dkddr2[i] / d1;
+        }
+        dd1dr1[3] += px01 * pt22 / d1;
+        dd1dr1[4] += py01 * pt22 / d1;
+        dd1dr2[3] += px02 * pt12 / d1;
+        dd1dr2[4] += py02 * pt12 / d1;
+    }
+#if KF_DEBUG
+    PrintVector<6>("(MinimizeHelixHelix) dk11dr1", dk11dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dk11dr2", dk11dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dk12dr1", dk12dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dk12dr2", dk12dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dk21dr1", dk21dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dk21dr2", dk21dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dk22dr1", dk22dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dk22dr2", dk22dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dkddr1", dkddr1);
+    PrintVector<6>("(MinimizeHelixHelix) dkddr2", dkddr2);
+    PrintVector<6>("(MinimizeHelixHelix) dc1dr1", dc1dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dc1dr2", dc1dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dc2dr1", dc2dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dc2dr2", dc2dr2);
+    PrintVector<6>("(MinimizeHelixHelix) dd1dr1", dd1dr1);
+    PrintVector<6>("(MinimizeHelixHelix) dd1dr2", dd1dr2);
 #endif
 
     if (!isStraight1) {
-        ds1[0] = std::atan2(bq1 * (k11 * c1 + k21 * d1), bq1 * k11 * d1 * bq1 - k21 * c1) / bq1;
-        ds1[1] = std::atan2(bq1 * (k11 * c1 - k21 * d1), -bq1 * k11 * d1 * bq1 - k21 * c1) / bq1;
+        double a{bq1 * (k11 * c1 + w_sign * k21 * d1)};
+        double b{w_sign * bq1 * k11 * d1 * bq1 - k21 * c1};
+        double c{b * b + a * a};
+        double d{c > 0. ? (1. / bq1 * 1. / c) : 0.};
 
-        double a{bq1 * (k11 * c1 + k21 * d1)};
-        double b{bq1 * k11 * d1 * bq1 - k21 * c1};
         for (int iP{0}; iP < 6; ++iP) {
-            if ((b * b + a * a) > 0) {
-                double dadr1{bq1 * (dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + dk21dr1[iP] * d1 + k21 * dd1dr1[iP])};
-                double dadr2{bq1 * (dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + dk21dr2[iP] * d1 + k21 * dd1dr2[iP])};
-                double dbdr1{bq1 * bq1 * (dk11dr1[iP] * d1 + k11 * dd1dr1[iP]) - (dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
-                double dbdr2{bq1 * bq1 * (dk11dr2[iP] * d1 + k11 * dd1dr2[iP]) - (dk21dr2[iP] * c1 + k21 * dc1dr2[iP])};
+            double dadr1{bq1 * (dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + w_sign * dk21dr1[iP] * d1 + w_sign * k21 * dd1dr1[iP])};
+            double dadr2{bq1 * (dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + w_sign * dk21dr2[iP] * d1 + w_sign * k21 * dd1dr2[iP])};
+            double dbdr1{w_sign * bq1 * bq1 * (dk11dr1[iP] * d1 + k11 * dd1dr1[iP]) - (dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
+            double dbdr2{w_sign * bq1 * bq1 * (dk11dr2[iP] * d1 + k11 * dd1dr2[iP]) - (dk21dr2[iP] * c1 + k21 * dc1dr2[iP])};
 
-                ds1dR1[0][iP] = 1. / bq1 * 1. / (b * b + a * a) * (dadr1 * b - dbdr1 * a);
-                ds1dR2[0][iP] = 1. / bq1 * 1. / (b * b + a * a) * (dadr2 * b - dbdr2 * a);
-            } else {
-                ds1dR1[0][iP] = 0.;
-                ds1dR2[0][iP] = 0.;
-            }
+            min1.ds_dr[iP] = d * (dadr1 * b - dbdr1 * a);
+            min1.ds_dr1[iP] = d * (dadr2 * b - dbdr2 * a);
         }
-
-        a = bq1 * (k11 * c1 - k21 * d1);
-        b = -bq1 * k11 * d1 * bq1 - k21 * c1;
-        for (int iP{0}; iP < 6; ++iP) {
-            if ((b * b + a * a) > 0) {
-                double dadr1{bq1 * (dk11dr1[iP] * c1 + k11 * dc1dr1[iP] - (dk21dr1[iP] * d1 + k21 * dd1dr1[iP]))};
-                double dadr2{bq1 * (dk11dr2[iP] * c1 + k11 * dc1dr2[iP] - (dk21dr2[iP] * d1 + k21 * dd1dr2[iP]))};
-                double dbdr1{-bq1 * bq1 * (dk11dr1[iP] * d1 + k11 * dd1dr1[iP]) - (dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
-                double dbdr2{-bq1 * bq1 * (dk11dr2[iP] * d1 + k11 * dd1dr2[iP]) - (dk21dr2[iP] * c1 + k21 * dc1dr2[iP])};
-
-                ds1dR1[1][iP] = 1 / bq1 * 1 / (b * b + a * a) * (dadr1 * b - dbdr1 * a);
-                ds1dR2[1][iP] = 1 / bq1 * 1 / (b * b + a * a) * (dadr2 * b - dbdr2 * a);
-            } else {
-                ds1dR1[1][iP] = 0;
-                ds1dR2[1][iP] = 0;
-            }
-        }
-    }
-    if (!isStraight2) {
-        ds2[0] = std::atan2(bq2 * k12 * c2 + k22 * d1 * bq2, (bq2 * k12 * d1 * bq2 - k22 * c2)) / bq2;
-        ds2[1] = std::atan2(bq2 * k12 * c2 - k22 * d1 * bq2, (-bq2 * k12 * d1 * bq2 - k22 * c2)) / bq2;
-
-        double a{bq2 * (k12 * c2 + k22 * d1)};
-        double b{bq2 * k12 * d1 * bq2 - k22 * c2};
-        for (int iP{0}; iP < 6; ++iP) {
-            if ((b * b + a * a) > 0) {
-                double dadr1{bq2 * (dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + dk22dr1[iP] * d1 + k22 * dd1dr1[iP])};
-                double dadr2{bq2 * (dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + dk22dr2[iP] * d1 + k22 * dd1dr2[iP])};
-                double dbdr1{bq2 * bq2 * (dk12dr1[iP] * d1 + k12 * dd1dr1[iP]) - (dk22dr1[iP] * c2 + k22 * dc2dr1[iP])};
-                double dbdr2{bq2 * bq2 * (dk12dr2[iP] * d1 + k12 * dd1dr2[iP]) - (dk22dr2[iP] * c2 + k22 * dc2dr2[iP])};
-
-                ds2dR1[0][iP] = 1 / bq2 * 1 / (b * b + a * a) * (dadr1 * b - dbdr1 * a);
-                ds2dR2[0][iP] = 1 / bq2 * 1 / (b * b + a * a) * (dadr2 * b - dbdr2 * a);
-            } else {
-                ds2dR1[0][iP] = 0;
-                ds2dR2[0][iP] = 0;
-            }
-        }
-
-        a = bq2 * (k12 * c2 - k22 * d1);
-        b = -bq2 * k12 * d1 * bq2 - k22 * c2;
-        for (int iP{0}; iP < 6; ++iP) {
-            if ((b * b + a * a) > 0) {
-                double dadr1{bq2 * (dk12dr1[iP] * c2 + k12 * dc2dr1[iP] - (dk22dr1[iP] * d1 + k22 * dd1dr1[iP]))};
-                double dadr2{bq2 * (dk12dr2[iP] * c2 + k12 * dc2dr2[iP] - (dk22dr2[iP] * d1 + k22 * dd1dr2[iP]))};
-                double dbdr1{-bq2 * bq2 * (dk12dr1[iP] * d1 + k12 * dd1dr1[iP]) - (dk22dr1[iP] * c2 + k22 * dc2dr1[iP])};
-                double dbdr2{-bq2 * bq2 * (dk12dr2[iP] * d1 + k12 * dd1dr2[iP]) - (dk22dr2[iP] * c2 + k22 * dc2dr2[iP])};
-
-                ds2dR1[1][iP] = 1 / bq2 * 1 / (b * b + a * a) * (dadr1 * b - dbdr1 * a);
-                ds2dR2[1][iP] = 1 / bq2 * 1 / (b * b + a * a) * (dadr2 * b - dbdr2 * a);
-            } else {
-                ds2dR1[1][iP] = 0;
-                ds2dR2[1][iP] = 0;
-            }
-        }
-    }
-    if (isStraight1 && pt12 > 0.) {
-        ds1[0] = (k11 * c1 + k21 * d1) / (-k21 * c1);
-        ds1[1] = (k11 * c1 - k21 * d1) / (-k21 * c1);
-
-        double a{k11 * c1 + k21 * d1};
+    } else {
+        double a{k11 * c1 + w_sign * k21 * d1};
         double b{-k21 * c1};
 
         for (int iP{0}; iP < 6; ++iP) {
-            if (b * b > 0) {
-                double dadr1{(dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + dk21dr1[iP] * d1 + k21 * dd1dr1[iP])};
-                double dadr2{(dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + dk21dr2[iP] * d1 + k21 * dd1dr2[iP])};
-                double dbdr1{-(dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
-                double dbdr2{-(dk21dr2[iP] * c1 + k21 * dc1dr2[iP])};
+            double dadr1{dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + w_sign * dk21dr1[iP] * d1 + w_sign * k21 * dd1dr1[iP]};
+            double dadr2{dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + w_sign * dk21dr2[iP] * d1 + w_sign * k21 * dd1dr2[iP]};
+            double dbdr1{-dk21dr1[iP] * c1 - k21 * dc1dr1[iP]};
+            double dbdr2{-dk21dr2[iP] * c1 - k21 * dc1dr2[iP]};
 
-                ds1dR1[0][iP] = dadr1 / b - dbdr1 * a / (b * b);
-                ds1dR2[0][iP] = dadr2 / b - dbdr2 * a / (b * b);
-            } else {
-                ds1dR1[0][iP] = 0;
-                ds1dR2[0][iP] = 0;
-            }
-        }
-
-        a = k11 * c1 - k21 * d1;
-        for (int iP{0}; iP < 6; ++iP) {
-            if (b * b > 0) {
-                double dadr1{(dk11dr1[iP] * c1 + k11 * dc1dr1[iP] - dk21dr1[iP] * d1 - k21 * dd1dr1[iP])};
-                double dadr2{(dk11dr2[iP] * c1 + k11 * dc1dr2[iP] - dk21dr2[iP] * d1 - k21 * dd1dr2[iP])};
-                double dbdr1{-(dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
-                double dbdr2{-(dk21dr2[iP] * c1 + k21 * dc1dr2[iP])};
-
-                ds1dR1[1][iP] = dadr1 / b - dbdr1 * a / (b * b);
-                ds1dR2[1][iP] = dadr2 / b - dbdr2 * a / (b * b);
-            } else {
-                ds1dR1[1][iP] = 0;
-                ds1dR2[1][iP] = 0;
-            }
+            min1.ds_dr[iP] = dadr1 / b - dbdr1 * a / (b * b);
+            min1.ds_dr1[iP] = dadr2 / b - dbdr2 * a / (b * b);
         }
     }
-    if (isStraight2 && pt22 > 0.) {
-        ds2[0] = (k12 * c2 + k22 * d1) / (-k22 * c2);
-        ds2[1] = (k12 * c2 - k22 * d1) / (-k22 * c2);
 
-        double a{k12 * c2 + k22 * d1};
+    if (!isStraight2) {
+        double a{bq2 * (k12 * c2 + w_sign * k22 * d1)};
+        double b{w_sign * bq2 * k12 * d1 * bq2 - k22 * c2};
+        double c{b * b + a * a};
+        double d{c > 0. ? (1. / bq2 * 1. / c) : 0.};
+
+        for (int iP{0}; iP < 6; ++iP) {
+            double dadr1{bq2 * (dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + w_sign * dk22dr1[iP] * d1 + w_sign * k22 * dd1dr1[iP])};
+            double dadr2{bq2 * (dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + w_sign * dk22dr2[iP] * d1 + w_sign * k22 * dd1dr2[iP])};
+            double dbdr1{w_sign * bq2 * bq2 * (dk12dr1[iP] * d1 + k12 * dd1dr1[iP]) - (dk22dr1[iP] * c2 + k22 * dc2dr1[iP])};
+            double dbdr2{w_sign * bq2 * bq2 * (dk12dr2[iP] * d1 + k12 * dd1dr2[iP]) - (dk22dr2[iP] * c2 + k22 * dc2dr2[iP])};
+
+            min2.ds_dr1[iP] = d * (dadr1 * b - dbdr1 * a);
+            min2.ds_dr[iP] = d * (dadr2 * b - dbdr2 * a);
+        }
+    } else {
+        double a{k12 * c2 + w_sign * k22 * d1};
         double b{-k22 * c2};
 
         for (int iP{0}; iP < 6; ++iP) {
-            if (b * b > 0) {
-                double dadr1{(dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + dk22dr1[iP] * d1 + k22 * dd1dr1[iP])};
-                double dadr2{(dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + dk22dr2[iP] * d1 + k22 * dd1dr2[iP])};
-                double dbdr1{-(dk22dr1[iP] * c2 + k22 * dc2dr1[iP])};
-                double dbdr2{-(dk22dr2[iP] * c2 + k22 * dc2dr2[iP])};
+            double dadr1{dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + w_sign * dk22dr1[iP] * d1 + w_sign * k22 * dd1dr1[iP]};
+            double dadr2{dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + w_sign * dk22dr2[iP] * d1 + w_sign * k22 * dd1dr2[iP]};
+            double dbdr1{-dk22dr1[iP] * c2 - k22 * dc2dr1[iP]};
+            double dbdr2{-dk22dr2[iP] * c2 - k22 * dc2dr2[iP]};
 
-                ds2dR1[0][iP] = dadr1 / b - dbdr1 * a / (b * b);
-                ds2dR2[0][iP] = dadr2 / b - dbdr2 * a / (b * b);
-            } else {
-                ds2dR1[0][iP] = 0;
-                ds2dR2[0][iP] = 0;
-            }
-        }
-
-        a = k12 * c2 - k22 * d1;
-        for (int iP{0}; iP < 6; ++iP) {
-            if (b * b > 0) {
-                double dadr1{dk12dr1[iP] * c2 + k12 * dc2dr1[iP] - dk22dr1[iP] * d1 - k22 * dd1dr1[iP]};
-                double dadr2{dk12dr2[iP] * c2 + k12 * dc2dr2[iP] - dk22dr2[iP] * d1 - k22 * dd1dr2[iP]};
-                double dbdr1{-dk22dr1[iP] * c2 - k22 * dc2dr1[iP]};
-                double dbdr2{-dk22dr2[iP] * c2 - k22 * dc2dr2[iP]};
-
-                ds2dR1[1][iP] = dadr1 / b - dbdr1 * a / (b * b);
-                ds2dR2[1][iP] = dadr2 / b - dbdr2 * a / (b * b);
-            } else {
-                ds2dR1[1][iP] = 0;
-                ds2dR2[1][iP] = 0;
-            }
+            min2.ds_dr1[iP] = (std::abs(b) > Const::AbsAlmostZero ? dadr1 / b : 0.) - (b * b > Const::AbsAlmostZero ? dbdr1 * a / (b * b) : 0.);
+            min2.ds_dr[iP] = (std::abs(b) > Const::AbsAlmostZero ? dadr2 / b : 0.) - (b * b > Const::AbsAlmostZero ? dbdr2 * a / (b * b) : 0.);
         }
     }
 
-    // select a point which is close to the primary vertex (with the smallest r)
-
-    double dr2[2];
-    double tmp_x1[2];
-    double tmp_y1[2];
-    double tmp_z1[2];
-    double tmp_x2[2];
-    double tmp_y2[2];
-    double tmp_z2[2];
-    double tmp_dx[2];
-    double tmp_dy[2];
-    double tmp_dz[2];
-    int winner{0};
-    for (int iP{0}; iP < 2; ++iP) {
-        double bs1{bq1 * ds1[iP]};
-        double bs2{bq2 * ds2[iP]};
-        double sss{std::sin(bs1)};
-        double ccc{std::cos(bs1)};
-
-        double sB{sss / bq1};
-        double cB{(1. - ccc) / bq1};
-
-        tmp_x1[iP] = fP[0] + sB * px1 + cB * py1;
-        tmp_y1[iP] = fP[1] - cB * px1 + sB * py1;
-        tmp_z1[iP] = fP[2] + ds1[iP] * fP[5];
-
-        sss = std::sin(bs2);
-        ccc = std::cos(bs2);
-
-        sB = sss / bq2;
-        cB = (1. - ccc) / bq2;
-
-        tmp_x2[iP] = p.fP[0] + sB * px2 + cB * py2;
-        tmp_y2[iP] = p.fP[1] - cB * px2 + sB * py2;
-        tmp_z2[iP] = p.fP[2] + ds2[iP] * p.fP[5];
-
-        tmp_dx[iP] = tmp_x1[iP] - tmp_x2[iP];
-        tmp_dy[iP] = tmp_y1[iP] - tmp_y2[iP];
-        tmp_dz[iP] = tmp_z1[iP] - tmp_z2[iP];
-
-        dr2[iP] = tmp_dx[iP] * tmp_dx[iP] + tmp_dy[iP] * tmp_dy[iP] + tmp_dz[iP] * tmp_dz[iP];
-    }
-
-    bool isFirstRoot{dr2[0] < dr2[1]};
-    if (isFirstRoot) {
-        ds[0] = ds1[0];
-        ds[1] = ds2[0];
-        for (int iP{0}; iP < 6; ++iP) {
-            ds_dr[0][iP] = ds1dR1[0][iP];
-            ds_dr[1][iP] = ds1dR2[0][iP];
-            ds_dr[2][iP] = ds2dR1[0][iP];
-            ds_dr[3][iP] = ds2dR2[0][iP];
-        }
-    } else {
-        ds[0] = ds1[1];
-        ds[1] = ds2[1];
-        for (int iP{0}; iP < 6; ++iP) {
-            ds_dr[0][iP] = ds1dR1[1][iP];
-            ds_dr[1][iP] = ds1dR2[1][iP];
-            ds_dr[2][iP] = ds2dR1[1][iP];
-            ds_dr[3][iP] = ds2dR2[1][iP];
-        }
-        winner = 1;
-    }
+    double px1{min1.dir[0]};
+    double py1{min1.dir[1]};
+    double px2{min2.dir[0]};
+    double py2{min2.dir[1]};
 #if KF_DEBUG
-    std::cout << "(GetDStoParticleBz) min1.ds = " << ds[0] << '\n';
-    std::cout << "(GetDStoParticleBz) min1.(x,y,z) = " << tmp_x1[winner] << ", " << tmp_y1[winner] << ", " << tmp_z1[winner] << '\n';
-    std::cout << "(GetDStoParticleBz) min2.ds = " << ds[1] << '\n';
-    std::cout << "(GetDStoParticleBz) min2.(x,y,z) = " << tmp_x2[winner] << ", " << tmp_y2[winner] << ", " << tmp_z2[winner] << '\n';
-    std::cout << "(GetDStoParticleBz) dx = " << tmp_dx[winner] << '\n';
-    std::cout << "(GetDStoParticleBz) dy = " << tmp_dy[winner] << '\n';
-    std::cout << "(GetDStoParticleBz) dz = " << tmp_dz[winner] << '\n';
-    std::cout << "(GetDStoParticleBz) dca_3d = " << std::sqrt(dr2[winner]) << '\n';
+    std::cout << "(MinimizeHelixHelix) px1 = " << px1 << '\n';
+    std::cout << "(MinimizeHelixHelix) py1 = " << py1 << '\n';
+    std::cout << "(MinimizeHelixHelix) px2 = " << px2 << '\n';
+    std::cout << "(MinimizeHelixHelix) py2 = " << py2 << '\n';
 #endif
 
-    // 2. add z-component as small correction //
+    // 2 -- add z-component as small correction //
 
-    double bs1{bq1 * ds[0]};
-    double bs2{bq2 * ds[1]};
-    double sss{std::sin(bs1)};
-    double ccc{std::cos(bs1)};
-
-    double sB{sss / bq1};
-    double cB{(1. - ccc) / bq1};
-
-    double x1{x01 + sB * px1 + cB * py1};
-    double y1{y01 - cB * px1 + sB * py1};
-    double z1{z01 + ds[0] * pz1};
-    double ppx1{ccc * px1 + sss * py1};
-    double ppy1{-sss * px1 + ccc * py1};
-    double ppz1{pz1};
-
-    double sss1{std::sin(bs2)};
-    double ccc1{std::cos(bs2)};
-
-    double sB1{sss1 / bq2};
-    double cB1{(1. - ccc1) / bq2};
-
-    double x2{x02 + sB1 * px2 + cB1 * py2};
-    double y2{y02 - cB1 * px2 + sB1 * py2};
-    double z2{z02 + ds[1] * pz2};
-    double ppx2{ccc1 * px2 + sss1 * py2};
-    double ppy2{-sss1 * px2 + ccc1 * py2};
-    double ppz2{pz2};
-
-    double p12{ppx1 * ppx1 + ppy1 * ppy1 + ppz1 * ppz1};
-    double p22{ppx2 * ppx2 + ppy2 * ppy2 + ppz2 * ppz2};
-    double lp1p2{ppx1 * ppx2 + ppy1 * ppy2 + ppz1 * ppz2};
-
-    double dx{x2 - x1};
-    double dy{y2 - y1};
-    double dz{z2 - z1};
-
-    double ldrp1{ppx1 * dx + ppy1 * dy + ppz1 * dz};
-    double ldrp2{ppx2 * dx + ppy2 * dy + ppz2 * dz};
+    double p12{px1 * px1 + py1 * py1 + pz01 * pz01};
+    double p22{px2 * px2 + py2 * py2 + pz02 * pz02};
+    double lp1p2{px1 * px2 + py1 * py2 + pz01 * pz02};
 
     double detp{lp1p2 * lp1p2 - p12 * p22};
-    if (std::abs(detp) < 1.e-4) detp = 1;  // PENDING
+    if (std::abs(detp) < Const::AbsAlmostZero || detp * detp < Const::AbsAlmostZero) return {min1, min2};  // protection
 
-    // ds_dr calculation
+    // 2.a -- update derivatives //
+
+    double ldrp1{px1 * dx + py1 * dy + pz01 * dz};
+    double ldrp2{px2 * dx + py2 * dy + pz02 * dz};
     double a1{ldrp2 * lp1p2 - ldrp1 * p22};
     double a2{ldrp2 * p12 - ldrp1 * lp1p2};
-    double lp1p2_ds0{bq1 * (ppx2 * ppy1 - ppy2 * ppx1)};
-    double lp1p2_ds1{bq2 * (ppx1 * ppy2 - ppy1 * ppx2)};
-    double ldrp1_ds0{-p12 + bq1 * (ppy1 * dx - ppx1 * dy)};
+    double lp1p2_ds0{bq1 * (px2 * py1 - py2 * px1)};
+    double lp1p2_ds1{bq2 * (px1 * py2 - py1 * px2)};
+    double ldrp1_ds0{-p12 + bq1 * (py1 * dx - px1 * dy)};
     double ldrp1_ds1{lp1p2};
     double ldrp2_ds0{-lp1p2};
-    double ldrp2_ds1{p22 + bq2 * (ppy2 * dx - ppx2 * dy)};
+    double ldrp2_ds1{p22 + bq2 * (py2 * dx - px2 * dy)};
     double detp_ds0{2. * lp1p2 * lp1p2_ds0};
     double detp_ds1{2. * lp1p2 * lp1p2_ds1};
     double a1_ds0{ldrp2_ds0 * lp1p2 + ldrp2 * lp1p2_ds0 - ldrp1_ds0 * p22};
@@ -1539,47 +1384,79 @@ void Particle::GetDStoParticleBz(double bz, const Particle& p, double ds[2], Vec
     double dsl2ds0{a2_ds0 / detp - a2 * detp_ds0 / (detp * detp)};
     double dsl2ds1{a2_ds1 / detp - a2 * detp_ds1 / (detp * detp)};
 #if KF_DEBUG
-    std::cout << "(GetDStoParticleBz) a1 = " << a1 << '\n';
-    std::cout << "(GetDStoParticleBz) a2 = " << a2 << '\n';
-    std::cout << "(GetDStoParticleBz) lp1p2_ds0 = " << lp1p2_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) lp1p2_ds1 = " << lp1p2_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) ldrp1_ds0 = " << ldrp1_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) ldrp1_ds1 = " << ldrp1_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) ldrp2_ds0 = " << ldrp2_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) ldrp2_ds1 = " << ldrp2_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) detp_ds0 = " << detp_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) detp_ds1 = " << detp_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) a1_ds0 = " << a1_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) a1_ds1 = " << a1_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) a2_ds0 = " << a2_ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) a2_ds1 = " << a2_ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) dsl1ds0 = " << dsl1ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) dsl1ds1 = " << dsl1ds1 << '\n';
-    std::cout << "(GetDStoParticleBz) dsl2ds0 = " << dsl2ds0 << '\n';
-    std::cout << "(GetDStoParticleBz) dsl2ds1 = " << dsl2ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) a1 = " << a1 << '\n';
+    std::cout << "(MinimizeHelixHelix) a2 = " << a2 << '\n';
+    std::cout << "(MinimizeHelixHelix) lp1p2_ds0 = " << lp1p2_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) lp1p2_ds1 = " << lp1p2_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) ldrp1_ds0 = " << ldrp1_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) ldrp1_ds1 = " << ldrp1_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) ldrp2_ds0 = " << ldrp2_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) ldrp2_ds1 = " << ldrp2_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) detp_ds0 = " << detp_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) detp_ds1 = " << detp_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) a1_ds0 = " << a1_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) a1_ds1 = " << a1_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) a2_ds0 = " << a2_ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) a2_ds1 = " << a2_ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) dsl1ds0 = " << dsl1ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) dsl1ds1 = " << dsl1ds1 << '\n';
+    std::cout << "(MinimizeHelixHelix) dsl2ds0 = " << dsl2ds0 << '\n';
+    std::cout << "(MinimizeHelixHelix) dsl2ds1 = " << dsl2ds1 << '\n';
 #endif
-    double dsldr[4][6];
+
+    Vector<6> dsldr0{};
+    Vector<6> dsldr1{};
+    Vector<6> dsldr2{};
+    Vector<6> dsldr3{};
     for (int iP{0}; iP < 6; ++iP) {
-        dsldr[0][iP] = dsl1ds0 * ds_dr[0][iP] + dsl1ds1 * ds_dr[2][iP];
-        dsldr[1][iP] = dsl1ds0 * ds_dr[1][iP] + dsl1ds1 * ds_dr[3][iP];
-        dsldr[2][iP] = dsl2ds0 * ds_dr[0][iP] + dsl2ds1 * ds_dr[2][iP];
-        dsldr[3][iP] = dsl2ds0 * ds_dr[1][iP] + dsl2ds1 * ds_dr[3][iP];
+        dsldr0[iP] = dsl1ds0 * min1.ds_dr[iP] + dsl1ds1 * min2.ds_dr1[iP];
+        dsldr1[iP] = dsl1ds0 * min1.ds_dr1[iP] + dsl1ds1 * min2.ds_dr[iP];
+        dsldr2[iP] = dsl2ds0 * min1.ds_dr[iP] + dsl2ds1 * min2.ds_dr1[iP];
+        dsldr3[iP] = dsl2ds0 * min1.ds_dr1[iP] + dsl2ds1 * min2.ds_dr[iP];
     }
 
-    for (int iDS{0}; iDS < 4; ++iDS) {
-        for (int iP{0}; iP < 6; ++iP) ds_dr[iDS][iP] += dsldr[iDS][iP];
+    for (int iP{0}; iP < 6; ++iP) {
+        min1.ds_dr[iP] += dsldr0[iP];
+        min1.ds_dr1[iP] += dsldr1[iP];
+        min2.ds_dr1[iP] += dsldr2[iP];
+        min2.ds_dr[iP] += dsldr3[iP];
     }
+#if KF_DEBUG
+    PrintVector<6>("(MinimizeHelixHelix) min1.ds_dr (after z-correction 1)", min1.ds_dr);
+    PrintVector<6>("(MinimizeHelixHelix) min1.ds_dr1 (after z-correction 1)", min1.ds_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) min2.ds_dr1 (after z-correction 1)", min2.ds_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) min2.ds_dr (after z-correction 1)", min2.ds_dr);
+#endif
 
-    Vector<6> lp1p2_dr0{0., 0., 0., ccc * ppx2 - ppy2 * sss, ccc * ppy2 + ppx2 * sss, pz2};
-    Vector<6> lp1p2_dr1{0., 0., 0., ccc1 * ppx1 - ppy1 * sss1, ccc1 * ppy1 + ppx1 * sss1, pz1};
-    Vector<6> ldrp1_dr0{
-        -ppx1, -ppy1, -pz1, cB * ppy1 - ppx1 * sB + ccc * dx - sss * dy, -cB * ppx1 - ppy1 * sB + sss * dx + ccc * dy, -ds[0] * pz1 + dz};
-    Vector<6> ldrp1_dr1{ppx1, ppy1, pz1, -cB1 * ppy1 + ppx1 * sB1, cB1 * ppx1 + ppy1 * sB1, ds[1] * pz1};
-    Vector<6> ldrp2_dr0{-ppx2, -ppy2, -pz2, cB * ppy2 - ppx2 * sB, -cB * ppx2 - ppy2 * sB, -ds[0] * pz2};
-    Vector<6> ldrp2_dr1{
-        ppx2, ppy2, pz2, -cB1 * ppy2 + ppx2 * sB1 + ccc1 * dx - sss1 * dy, cB1 * ppx2 + ppy2 * sB1 + sss1 * dx + ccc1 * dy, dz + ds[1] * pz2};
-    Vector<6> p12_dr0{0., 0., 0., 2. * px1, 2. * py1, 2. * pz1};
-    Vector<6> p22_dr1{0., 0., 0., 2. * px2, 2. * py2, 2. * pz2};
+    Vector<6> lp1p2_dr0{0., 0., 0., min1.cos * px2 - py2 * min1.sin, min1.cos * py2 + px2 * min1.sin, pz02};
+    Vector<6> lp1p2_dr1{0., 0., 0., min2.cos * px1 - py1 * min2.sin, min2.cos * py1 + px1 * min2.sin, pz01};
+    Vector<6> ldrp1_dr0{-px1,
+                        -py1,
+                        -pz01,
+                        min1.cB * py1 - px1 * min1.sB + min1.cos * dx - min1.sin * dy,
+                        -min1.cB * px1 - py1 * min1.sB + min1.sin * dx + min1.cos * dy,
+                        -min1.ds * pz01 + dz};
+    Vector<6> ldrp1_dr1{px1, py1, pz01, -min2.cB * py1 + px1 * min2.sB, min2.cB * px1 + py1 * min2.sB, min2.ds * pz01};
+    Vector<6> ldrp2_dr0{-px2, -py2, -pz02, min1.cB * py2 - px2 * min1.sB, -min1.cB * px2 - py2 * min1.sB, -min1.ds * pz02};
+    Vector<6> ldrp2_dr1{px2,
+                        py2,
+                        pz02,
+                        -min2.cB * py2 + px2 * min2.sB + min2.cos * dx - min2.sin * dy,
+                        min2.cB * px2 + py2 * min2.sB + min2.sin * dx + min2.cos * dy,
+                        dz + min2.ds * pz02};
+    Vector<6> p12_dr0{0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
+    Vector<6> p22_dr1{0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
+#if KF_DEBUG
+    PrintVector<6>("(MinimizeHelixHelix) lp1p2_dr0", lp1p2_dr0);
+    PrintVector<6>("(MinimizeHelixHelix) lp1p2_dr1", lp1p2_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) ldrp1_dr0", ldrp1_dr0);
+    PrintVector<6>("(MinimizeHelixHelix) ldrp1_dr1", ldrp1_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) ldrp2_dr0", ldrp2_dr0);
+    PrintVector<6>("(MinimizeHelixHelix) ldrp2_dr1", ldrp2_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) p12_dr0", p12_dr0);
+    PrintVector<6>("(MinimizeHelixHelix) p22_dr1", p22_dr1);
+#endif
+
     for (int iP{0}; iP < 6; ++iP) {
         double a1_dr0{ldrp2_dr0[iP] * lp1p2 + ldrp2 * lp1p2_dr0[iP] - ldrp1_dr0[iP] * p22};
         double a1_dr1{ldrp2_dr1[iP] * lp1p2 + ldrp2 * lp1p2_dr1[iP] - ldrp1_dr1[iP] * p22 - ldrp1 * p22_dr1[iP]};
@@ -1588,30 +1465,59 @@ void Particle::GetDStoParticleBz(double bz, const Particle& p, double ds[2], Vec
         double detp_dr0{2. * lp1p2 * lp1p2_dr0[iP] - p12_dr0[iP] * p22};
         double detp_dr1{2. * lp1p2 * lp1p2_dr1[iP] - p12 * p22_dr1[iP]};
 
-        ds_dr[0][iP] += a1_dr0 / detp - a1 * detp_dr0 / (detp * detp);
-        ds_dr[1][iP] += a1_dr1 / detp - a1 * detp_dr1 / (detp * detp);
-        ds_dr[2][iP] += a2_dr0 / detp - a2 * detp_dr0 / (detp * detp);
-        ds_dr[3][iP] += a2_dr1 / detp - a2 * detp_dr1 / (detp * detp);
+        min1.ds_dr[iP] += a1_dr0 / detp - a1 * detp_dr0 / (detp * detp);
+        min1.ds_dr1[iP] += a1_dr1 / detp - a1 * detp_dr1 / (detp * detp);
+        min2.ds_dr1[iP] += a2_dr0 / detp - a2 * detp_dr0 / (detp * detp);
+        min2.ds_dr[iP] += a2_dr1 / detp - a2 * detp_dr1 / (detp * detp);
     }
-
-    ds[0] += a1 / detp;
-    ds[1] += a2 / detp;
 #if KF_DEBUG
-    PrintVector<6>("(GetDStoParticleBz) lp1p2_dr0", lp1p2_dr0);
-    PrintVector<6>("(GetDStoParticleBz) lp1p2_dr1", lp1p2_dr1);
-    PrintVector<6>("(GetDStoParticleBz) ldrp1_dr0", ldrp1_dr0);
-    PrintVector<6>("(GetDStoParticleBz) ldrp1_dr1", ldrp1_dr1);
-    PrintVector<6>("(GetDStoParticleBz) ldrp2_dr0", ldrp2_dr0);
-    PrintVector<6>("(GetDStoParticleBz) ldrp2_dr1", ldrp2_dr1);
-    PrintVector<6>("(GetDStoParticleBz) p12_dr0", p12_dr0);
-    PrintVector<6>("(GetDStoParticleBz) p22_dr1", p22_dr1);
-    PrintVector<6>("(GetDStoParticleBz) min1.dsdr", ds_dr[0]);
-    PrintVector<6>("(GetDStoParticleBz) min1.dsdr1", ds_dr[1]);
-    PrintVector<6>("(GetDStoParticleBz) min2.dsdr1", ds_dr[2]);
-    PrintVector<6>("(GetDStoParticleBz) min2.dsdr", ds_dr[3]);
-    std::cout << "(GetDStoParticleBz) min1.ds (after z-correction) = " << ds[0] << '\n';
-    std::cout << "(GetDStoParticleBz) min2.ds (after z-correction) = " << ds[1] << '\n';
+    PrintVector<6>("(MinimizeHelixHelix) min1.ds_dr (after z-correction 2)", min1.ds_dr);
+    PrintVector<6>("(MinimizeHelixHelix) min1.ds_dr1 (after z-correction 2)", min1.ds_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) min2.ds_dr1 (after z-correction 2)", min2.ds_dr1);
+    PrintVector<6>("(MinimizeHelixHelix) min2.ds_dr (after z-correction 2)", min2.ds_dr);
 #endif
+
+    // 2.b -- update ds //
+
+    min1.ds += a1 / detp;
+    min2.ds += a2 / detp;
+#if KF_DEBUG
+    std::cout << "(MinimizeHelixHelix) min1.ds (after z-correction) = " << min1.ds << '\n';
+    std::cout << "(MinimizeHelixHelix) min2.ds (after z-correction) = " << min2.ds << '\n';
+#endif
+
+    // 2.c -- update rest of cache properties //
+
+    min1.theta = bq1 * min1.ds;
+    std::tie(min1.sin, min1.cos) = sincos(min1.theta);
+    min1.sB = min1.sin / bq1;
+    min1.cB = (1. - min1.cos) / bq1;
+
+    min1.pca[0] = x01 + min1.sB * px01 + min1.cB * py01;
+    min1.pca[1] = y01 - min1.cB * px01 + min1.sB * py01;
+    min1.pca[2] = z01 + min1.ds * pz01;
+    min1.dir[0] = min1.cos * px01 + min1.sin * py01;
+    min1.dir[1] = -min1.sin * px01 + min1.cos * py01;
+    min1.dir[2] = pz01;
+
+    min2.theta = bq2 * min2.ds;
+    std::tie(min2.sin, min2.cos) = sincos(min2.theta);
+    min2.sB = min2.sin / bq2;
+    min2.cB = (1. - min2.cos) / bq2;
+
+    min2.pca[0] = x02 + min2.sB * px02 + min2.cB * py02;
+    min2.pca[1] = y02 - min2.cB * px02 + min2.sB * py02;
+    min2.pca[2] = z02 + min2.ds * pz02;
+    min2.dir[0] = min2.cos * px02 + min2.sin * py02;
+    min2.dir[1] = -min2.sin * px02 + min2.cos * py02;
+    min2.dir[2] = pz02;
+#if KF_DEBUG
+    PrintVector<3>("(MinimizeHelixHelix) min1.(x,y,z) (after z-correction)", min1.pca);
+    PrintVector<3>("(MinimizeHelixHelix) min2.(x,y,z) (after z-correction)", min2.pca);
+    std::cout << "-- finished (MinimizeHelixHelix) --" << '\n';
+#endif
+
+    return {min1, min2};
 }
 
 // Calculate dS = l/p parameters for two particles, where
@@ -1626,64 +1532,93 @@ void Particle::GetDStoParticleBz(double bz, const Particle& p, double ds[2], Vec
 // 4) dsdr[3][6] = d(dS[1])/d(param2);
 // where param1 are parameters of the current particle fP and
 // param2 are parameters of the second particle p.fP.
-// \param[in] p - second particle
-// \param[out] dS[2] - transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
-// \param[out] dsdr[4][6] - partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
-void Particle::GetDStoParticleLine(const Particle& p, double ds[2], Vector<6> dsdr[4]) const {
-
-    double p12{fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]};
-    double p22{p.fP[3] * p.fP[3] + p.fP[4] * p.fP[4] + p.fP[5] * p.fP[5]};
-    double p1p2{fP[3] * p.fP[3] + fP[4] * p.fP[4] + fP[5] * p.fP[5]};
-
-    double drp1{fP[3] * (p.fP[0] - fP[0]) + fP[4] * (p.fP[1] - fP[1]) + fP[5] * (p.fP[2] - fP[2])};
-    double drp2{p.fP[3] * (p.fP[0] - fP[0]) + p.fP[4] * (p.fP[1] - fP[1]) + p.fP[5] * (p.fP[2] - fP[2])};
-
-    double detp{p1p2 * p1p2 - p12 * p22};
-    if (std::abs(detp) < 1.e-4) detp = 1;  // PENDING
-
-    ds[0] = (drp2 * p1p2 - drp1 * p22) / detp;
-    ds[1] = (drp2 * p12 - drp1 * p1p2) / detp;
+// Input:
+// - p - second particle
+// Return:
+// - dS[2] - transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
+// - dsdr[4][6] - partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
+std::pair<Result::MinPart2Part, Result::MinPart2Part> Particle::MinimizeLineLine(const Particle& p) const {
+#if KF_DEBUG
+    std::cout << "-- started (" << __FUNCTION__ << ") --" << '\n';
+#endif
+    Result::MinPart2Part min1;
+    Result::MinPart2Part min2;
 
     double x01{fP[0]};
     double y01{fP[1]};
     double z01{fP[2]};
-    double px1{fP[3]};
-    double py1{fP[4]};
-    double pz1{fP[5]};
+    double px01{fP[3]};
+    double py01{fP[4]};
+    double pz01{fP[5]};
 
     double x02{p.fP[0]};
     double y02{p.fP[1]};
     double z02{p.fP[2]};
-    double px2{p.fP[3]};
-    double py2{p.fP[4]};
-    double pz2{p.fP[5]};
+    double px02{p.fP[3]};
+    double py02{p.fP[4]};
+    double pz02{p.fP[5]};
 
-    Vector<6> drp1_dr1{-px1, -py1, -pz1, -x01 + x02, -y01 + y02, -z01 + z02};
-    Vector<6> drp1_dr2{px1, py1, pz1, 0., 0., 0.};
-    Vector<6> drp2_dr1{-px2, -py2, -pz2, 0., 0., 0.};
-    Vector<6> drp2_dr2{px2, py2, pz2, -x01 + x02, -y01 + y02, -z01 + z02};
-    Vector<6> dp1p2_dr1{0., 0., 0., px2, py2, pz2};
-    Vector<6> dp1p2_dr2{0., 0., 0., px1, py1, pz1};
-    Vector<6> dp12_dr1{0., 0., 0., 2. * px1, 2. * py1, 2. * pz1};
+    double p12{px01 * px01 + py01 * py01 + pz01 * pz01};
+    double p22{px02 * px02 + py02 * py02 + pz02 * pz02};
+    double p1p2{px01 * px02 + py01 * py02 + pz01 * pz02};
+
+    double drp1{px01 * (x02 - x01) + py01 * (y02 - y01) + pz01 * (z02 - z01)};
+    double drp2{px02 * (x02 - x01) + py02 * (y02 - y01) + pz02 * (z02 - z01)};
+
+    double detp{p1p2 * p1p2 - p12 * p22};
+    if (std::abs(detp) < Const::AbsAlmostZero) {
+        return {min1, min2};  // PENDING
+    }
+
+    min1.ds = (drp2 * p1p2 - drp1 * p22) / detp;
+    min1.pca[0] = x01 + px01 * min1.ds;
+    min1.pca[1] = y01 + py01 * min1.ds;
+    min1.pca[2] = z01 + pz01 * min1.ds;
+    min2.ds = (drp2 * p12 - drp1 * p1p2) / detp;
+    min2.pca[0] = x02 + px02 * min2.ds;
+    min2.pca[1] = y02 + py02 * min2.ds;
+    min2.pca[2] = z02 + pz02 * min2.ds;
+
+    Vector<6> drp1_dr1{-px01, -py01, -pz01, -x01 + x02, -y01 + y02, -z01 + z02};
+    Vector<6> drp1_dr2{px01, py01, pz01, 0., 0., 0.};
+    Vector<6> drp2_dr1{-px02, -py02, -pz02, 0., 0., 0.};
+    Vector<6> drp2_dr2{px02, py02, pz02, -x01 + x02, -y01 + y02, -z01 + z02};
+    Vector<6> dp1p2_dr1{0., 0., 0., px02, py02, pz02};
+    Vector<6> dp1p2_dr2{0., 0., 0., px01, py01, pz01};
+    Vector<6> dp12_dr1{0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
     Vector<6> dp12_dr2{0., 0., 0., 0., 0., 0.};
     Vector<6> dp22_dr1{0., 0., 0., 0., 0., 0.};
-    Vector<6> dp22_dr2{0., 0., 0., 2. * px2, 2. * py2, 2. * pz2};
-    Vector<6> ddetp_dr1{0., 0., 0., -2 * p22 * px1 + 2. * p1p2 * px2, -2 * p22 * py1 + 2. * p1p2 * py2, -2 * p22 * pz1 + 2. * p1p2 * pz2};
-    Vector<6> ddetp_dr2{0., 0., 0., 2. * p1p2 * px1 - 2. * p12 * px2, 2. * p1p2 * py1 - 2. * p12 * py2, 2. * p1p2 * pz1 - 2. * p12 * pz2};
+    Vector<6> dp22_dr2{0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
+    Vector<6> ddetp_dr1{0., 0., 0., -2 * p22 * px01 + 2. * p1p2 * px02, -2 * p22 * py01 + 2. * p1p2 * py02, -2 * p22 * pz01 + 2. * p1p2 * pz02};
+    Vector<6> ddetp_dr2{0., 0., 0., 2. * p1p2 * px01 - 2. * p12 * px02, 2. * p1p2 * py01 - 2. * p12 * py02, 2. * p1p2 * pz01 - 2. * p12 * pz02};
 
     double a1{drp2 * p1p2 - drp1 * p22};
     double a2{drp2 * p12 - drp1 * p1p2};
+
     for (int i{0}; i < 6; ++i) {
         double da1_dr1{drp2_dr1[i] * p1p2 + drp2 * dp1p2_dr1[i] - drp1_dr1[i] * p22 - drp1 * dp22_dr1[i]};
         double da1_dr2{drp2_dr2[i] * p1p2 + drp2 * dp1p2_dr2[i] - drp1_dr2[i] * p22 - drp1 * dp22_dr2[i]};
         double da2_dr1{drp2_dr1[i] * p12 + drp2 * dp12_dr1[i] - drp1_dr1[i] * p1p2 - drp1 * dp1p2_dr1[i]};
         double da2_dr2{drp2_dr2[i] * p12 + drp2 * dp12_dr2[i] - drp1_dr2[i] * p1p2 - drp1 * dp1p2_dr2[i]};
 
-        dsdr[0][i] = da1_dr1 / detp - a1 * ddetp_dr1[i] / (detp * detp);
-        dsdr[1][i] = da1_dr2 / detp - a1 * ddetp_dr2[i] / (detp * detp);
-        dsdr[2][i] = da2_dr1 / detp - a2 * ddetp_dr1[i] / (detp * detp);
-        dsdr[3][i] = da2_dr2 / detp - a2 * ddetp_dr2[i] / (detp * detp);
+        min1.ds_dr[i] = da1_dr1 / detp - a1 * ddetp_dr1[i] / (detp * detp);
+        min1.ds_dr1[i] = da1_dr2 / detp - a1 * ddetp_dr2[i] / (detp * detp);
+        min2.ds_dr1[i] = da2_dr1 / detp - a2 * ddetp_dr1[i] / (detp * detp);
+        min2.ds_dr[i] = da2_dr2 / detp - a2 * ddetp_dr2[i] / (detp * detp);
     }
+#if KF_DEBUG
+    std::cout << "(MinimizeLineLine) min1.ds = " << min1.ds << '\n';
+    PrintVector<3>("(MinimizeLineLine) min1.pca", min1.pca);
+    PrintVector<6>("(MinimizeLineLine) min1.ds_dr", min1.ds_dr);
+    PrintVector<6>("(MinimizeLineLine) min1.ds_dr1", min1.ds_dr1);
+    std::cout << "(MinimizeLineLine) min2.ds = " << min2.ds << '\n';
+    PrintVector<3>("(MinimizeLineLine) min2.pca", min2.pca);
+    PrintVector<6>("(MinimizeLineLine) min2.ds_dr", min2.ds_dr);
+    PrintVector<6>("(MinimizeLineLine) min2.ds_dr1", min2.ds_dr1);
+    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
+
+    return {min1, min2};
 }
 
 // Transport the parameters and their covariance matrix of the current particle assuming constant homogeneous
@@ -1707,74 +1642,76 @@ void Particle::GetDStoParticleLine(const Particle& p, double ds[2], Vector<6> ds
 // \param[out] F[36] - transport jacobian, 6x6 matrix F = d(fP new)/d(fP old)
 // \param[out] F1[36] - correlation 6x6 matrix between the current particle and particle or vertex
 // with the state vector r1, to which the current particle is being transported, F1 = d(fP new)/d(r1)
-void Particle::TransportBz(double bz, double ds, const Vector<6>& dsdr, Vector<8>& P, SymMatrix<8>& C, const Vector<6>& dsdr1, Matrix<6, 6>& jacob,
-                           Matrix<6, 6>& corr) const {
+Result::Transport Particle::TransportBz(const Result::MinPart2Part& min, double bz) const {
 #if KF_DEBUG
     std::cout << "-- starting (TransportBz) --" << '\n';
 #endif
+    Result::Transport tpr;
+
     double bq{bz * fQ * Const::Kappa};
-    double bs{bq * ds};
-    double s{std::sin(bs)};
-    double c{std::cos(bs)};
-    double sB{s / bq};
-    double cB{(1 - c) / bq};
 
-    double px{fP[3]};
-    double py{fP[4]};
-    double pz{fP[5]};
+    double px0{fP[3]};
+    double py0{fP[4]};
+    double pz0{fP[5]};
 
-    P[0] = fP[0] + sB * px + cB * py;
-    P[1] = fP[1] - cB * px + sB * py;
-    P[2] = fP[2] + ds * pz;
-    P[3] = c * px + s * py;
-    P[4] = -s * px + c * py;
-    P[5] = fP[5];
-    P[6] = fP[6];
-    P[7] = fP[7];
+    tpr.P[0] = fP[0] + min.sB * px0 + min.cB * py0;
+    tpr.P[1] = fP[1] - min.cB * px0 + min.sB * py0;
+    tpr.P[2] = fP[2] + min.ds * pz0;
+    tpr.P[3] = min.cos * px0 + min.sin * py0;
+    tpr.P[4] = -min.sin * px0 + min.cos * py0;
+    tpr.P[5] = fP[5];
+    tpr.P[6] = fP[6];
+    tpr.P[7] = fP[7];
 
-    auto mJ = Zero<8, 8>();
+    Matrix<8, 8> mJ{};
     for (int i{0}; i < 8; ++i) mJ[i][i] = 1.;
-    mJ[0][3] = sB;
-    mJ[0][4] = cB;
-    mJ[1][3] = -cB;
-    mJ[1][4] = sB;
-    mJ[2][5] = ds;
-    mJ[3][3] = c;
-    mJ[3][4] = s;
-    mJ[4][3] = -s;
-    mJ[4][4] = c;
+    mJ[0][3] = min.sB;
+    mJ[0][4] = min.cB;
+    mJ[1][3] = -min.cB;
+    mJ[1][4] = min.sB;
+    mJ[2][5] = min.ds;
+    mJ[3][3] = min.cos;
+    mJ[3][4] = min.sin;
+    mJ[4][3] = -min.sin;
+    mJ[4][4] = min.cos;
 
-    auto mJds = Zero<6, 6>();
-    mJds[0][3] = c;
-    mJds[0][4] = s;
-    mJds[1][3] = -s;
-    mJds[1][4] = c;
+    Matrix<6, 6> mJds{};
+    mJds[0][3] = min.cos;
+    mJds[0][4] = min.sin;
+    mJds[1][3] = -min.sin;
+    mJds[1][4] = min.cos;
     mJds[2][5] = 1.;
-    mJds[3][3] = -bq * s;
-    mJds[3][4] = bq * c;
-    mJds[4][3] = -bq * c;
-    mJds[4][4] = -bq * s;
+    mJds[3][3] = -bq * min.sin;
+    mJds[3][4] = bq * min.cos;
+    mJds[4][3] = -bq * min.cos;
+    mJds[4][4] = -bq * min.sin;
 
     for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) mJ[i1][i2] += mJds[i1][3] * px * dsdr[i2] + mJds[i1][4] * py * dsdr[i2] + mJds[i1][5] * pz * dsdr[i2];
+        for (int i2{0}; i2 < 6; ++i2) {
+            mJ[i1][i2] += mJds[i1][3] * px0 * min.ds_dr[i2] + mJds[i1][4] * py0 * min.ds_dr[i2] + mJds[i1][5] * pz0 * min.ds_dr[i2];
+        }
     }
 
-    C = MultQSQt<8>(mJ, fC);
+    tpr.C = MultQSQt<8>(mJ, fC);
 
     for (int i{0}; i < 6; ++i) {
-        for (int j{0}; j < 6; ++j) jacob[i][j] = mJ[i][j];
+        for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
     }
 
     for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) corr[i1][i2] = mJds[i1][3] * px * dsdr1[i2] + mJds[i1][4] * py * dsdr1[i2] + mJds[i1][5] * pz * dsdr1[i2];
+        for (int i2{0}; i2 < 6; ++i2) {
+            tpr.corr[i1][i2] = mJds[i1][3] * px0 * min.ds_dr1[i2] + mJds[i1][4] * py0 * min.ds_dr1[i2] + mJds[i1][5] * pz0 * min.ds_dr1[i2];
+        }
     }
 #if KF_DEBUG
-    PrintVector<8>("(TransportBz) State", P);
-    PrintSymMatrix<8>("(TransportBz) Cov", C);
-    PrintMatrix<6, 6>("(TransportBz) Jacob", jacob);
-    PrintMatrix<6, 6>("(TransportBz) Corr", corr);
+    PrintVector<8>("(TransportBz) State", tpr.P);
+    PrintSymMatrix<8>("(TransportBz) Cov", tpr.C);
+    PrintMatrix<6, 6>("(TransportBz) Jacob", tpr.jacob);
+    PrintMatrix<6, 6>("(TransportBz) Corr", tpr.corr);
     std::cout << "-- finished (TransportBz) --" << '\n';
 #endif
+
+    return tpr;
 }
 
 // Transports the parameters and their covariance matrix of the current particle assuming the straight line trajectory
@@ -1786,8 +1723,7 @@ void Particle::TransportBz(double bz, double ds, const Vector<6>& dsdr, Vector<8
 // a pointer to F is initialised the transport jacobian F = d(fP new)/d(fP old) is stored.
 // Since dS can depend on the state vector r1 of other particle or vertex, the corelation matrix
 // F1 = d(fP new)/d(r1) can be optionally calculated if a pointer F1 is provided.
-// *Parameters F and F1 should be either both initialised or
-//     both set to null pointer.
+// *Parameters F and F1 should be either both initialised or both set to null pointer.
 // \param[in] dS - transport parameter which defines the distance to which particle should be transported
 // \param[in] dsdr[6] = ds/dr - partial derivatives of the parameter dS over the state vector of the current particle
 // \param[out] P[8] - array, where transported parameters should be stored
@@ -1797,16 +1733,17 @@ void Particle::TransportBz(double bz, double ds, const Vector<6>& dsdr, Vector<8
 // \param[out] F[36] - optional parameter, transport jacobian, 6x6 matrix F = d(fP new)/d(fP old)
 // \param[out] F1[36] - optional parameter, corelation 6x6 matrix betweeen the current particle and particle or vertex
 // with the state vector r1, to which the current particle is being transported, F1 = d(fP new)/d(r1)
-void Particle::TransportLine(double ds, const Vector<6>& ds_dr, Vector<8>& P, SymMatrix<8>& C, const Vector<6>& ds_dr1, Matrix<6, 6>& jacob,
-                             Matrix<6, 6>& corr) const {
+Result::Transport Particle::TransportLine(const Result::MinPart2Part& min) const {
 
-    auto mJ = Zero<8, 8>();
+    Result::Transport tpr;
+
+    Matrix<8, 8> mJ{};
     mJ[0][0] = 1.;
-    mJ[0][3] = ds;
+    mJ[0][3] = min.ds;
     mJ[1][1] = 1.;
-    mJ[1][4] = ds;
+    mJ[1][4] = min.ds;
     mJ[2][2] = 1.;
-    mJ[2][5] = ds;
+    mJ[2][5] = min.ds;
     mJ[3][3] = 1.;
     mJ[4][4] = 1.;
     mJ[5][5] = 1.;
@@ -1817,105 +1754,37 @@ void Particle::TransportLine(double ds, const Vector<6>& ds_dr, Vector<8>& P, Sy
     double py{fP[4]};
     double pz{fP[5]};
 
-    P[0] = fP[0] + ds * fP[3];
-    P[1] = fP[1] + ds * fP[4];
-    P[2] = fP[2] + ds * fP[5];
-    P[3] = fP[3];
-    P[4] = fP[4];
-    P[5] = fP[5];
-    P[6] = fP[6];
-    P[7] = fP[7];
+    tpr.P[0] = fP[0] + min.ds * fP[3];
+    tpr.P[1] = fP[1] + min.ds * fP[4];
+    tpr.P[2] = fP[2] + min.ds * fP[5];
+    tpr.P[3] = fP[3];
+    tpr.P[4] = fP[4];
+    tpr.P[5] = fP[5];
+    tpr.P[6] = fP[6];
+    tpr.P[7] = fP[7];
 
-    auto mJds = Zero<6, 6>();
+    Matrix<6, 6> mJds{};
     mJds[0][3] = 1.;
     mJds[1][4] = 1.;
     mJds[2][5] = 1.;
 
     for (int i1{0}; i1 < 6; ++i1) {
         for (int i2{0}; i2 < 6; ++i2) {
-            mJ[i1][i2] += mJds[i1][3] * px * ds_dr[i2] + mJds[i1][4] * py * ds_dr[i2] + mJds[i1][5] * pz * ds_dr[i2];
+            mJ[i1][i2] += mJds[i1][3] * px * min.ds_dr[i2] + mJds[i1][4] * py * min.ds_dr[i2] + mJds[i1][5] * pz * min.ds_dr[i2];
         }
     }
-    C = MultQSQt<8>(mJ, fC);
+    tpr.C = MultQSQt<8>(mJ, fC);
 
     for (int i{0}; i < 6; ++i) {
-        for (int j{0}; j < 6; ++j) jacob[i][j] = mJ[i][j];
+        for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
     }
     for (int i1{0}; i1 < 6; ++i1) {
         for (int i2{0}; i2 < 6; ++i2) {
-            corr[i1][i2] = mJds[i1][3] * px * ds_dr1[i2] + mJds[i1][4] * py * ds_dr1[i2] + mJds[i1][5] * pz * ds_dr1[i2];
-        }
-    }
-}
-
-// Symmetric 3x3 matrix a using modified Cholesky decomposition. The result is stored to the same matrix a.
-// \param[in,out] a - 3x3 symmetric matrix
-void Particle::InvertCholesky3(SymMatrix<3>& a) {
-
-    auto d = Zero<3>();
-    auto u = Zero<3, 3>();
-
-    for (int i{0}; i < 3; ++i) {
-        double uud{0.};
-        for (int j{0}; j < i; ++j) uud += u[j][i] * u[j][i] * d[j];
-        uud = a[i * (i + 3) / 2] - uud;
-
-        if (std::abs(uud) < Const::AbsAlmostZero) uud = Const::AbsAlmostZero;
-
-        d[i] = uud / std::abs(uud);
-        u[i][i] = std::sqrt(std::abs(uud));
-
-        for (int j{i + 1}; j < 3; ++j) {
-            uud = 0.;
-            for (int k{0}; k < i; ++k) uud += u[k][i] * u[k][j] * d[k];
-            uud = a[j * (j + 1) / 2 + i] - uud;
-            u[i][j] = d[i] / u[i][i] * uud;
+            tpr.corr[i1][i2] = mJds[i1][3] * px * min.ds_dr1[i2] + mJds[i1][4] * py * min.ds_dr1[i2] + mJds[i1][5] * pz * min.ds_dr1[i2];
         }
     }
 
-    Vector<3> u1;
-
-    for (int i{0}; i < 3; ++i) {
-        u1[i] = u[i][i];
-        u[i][i] = 1 / u[i][i];
-    }
-    for (int i{0}; i < 2; ++i) {
-        u[i][i + 1] = -u[i][i + 1] * u[i][i] * u[i + 1][i + 1];
-    }
-    for (int i{0}; i < 1; ++i) {
-        u[i][i + 2] = u[i][i + 1] * u1[i + 1] * u[i + 1][i + 2] - u[i][i + 2] * u[i][i] * u[i + 2][i + 2];
-    }
-
-    for (int i{0}; i < 3; ++i) a[i + 3] = u[i][2] * u[2][2] * d[2];
-    for (int i{0}; i < 2; ++i) a[i + 1] = u[i][1] * u[1][1] * d[1] + u[i][2] * u[1][2] * d[2];
-    a[0] = u[0][0] * u[0][0] * d[0] + u[0][1] * u[0][1] * d[1] + u[0][2] * u[0][2] * d[2];
-}
-
-// Matrix multiplication SOut = Q*S*Q^T, where Q - square matrix, S - symmetric matrix.
-// \param[in] Q - square matrix
-// \param[in] S - input symmetric matrix
-template <int N>
-SymMatrix<N> Particle::MultQSQt(const Matrix<N, N>& Q, const SymMatrix<N>& S) const {
-
-    Matrix<N, N> SQT;
-
-    for (int i{0}; i < N; ++i) {
-        for (int j{0}; j < N; ++j) {
-            SQT[i][j] = 0.;
-            for (int k{0}; k < N; ++k) SQT[i][j] += S[IJ(i, k)] * Q[j][k];
-        }
-    }
-
-    SymMatrix<N> SOut;
-
-    for (int i{0}; i < N; ++i) {
-        for (int j{0}; j <= i; ++j) {
-            SOut[IJ(i, j)] = 0.;
-            for (int k{0}; k < N; ++k) SOut[IJ(i, j)] += Q[i][k] * SQT[k][j];
-        }
-    }
-
-    return SOut;
+    return tpr;
 }
 
 }  // namespace KF
