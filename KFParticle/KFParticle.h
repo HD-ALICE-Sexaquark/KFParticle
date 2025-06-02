@@ -43,10 +43,8 @@ struct alignas(32) Cache {
 };
 
 namespace Result {
-struct alignas(32) MinPart2Vtx : Cache {
+struct alignas(32) Minimization : Cache {
     Vector<6> ds_dr{};
-};
-struct alignas(32) MinPart2Part : MinPart2Vtx {
     Vector<6> ds_dr1{};
 };
 struct alignas(32) Transport {
@@ -61,6 +59,11 @@ struct alignas(32) Measurement {
     Matrix<3, 3> D{};
     Vector<8> P1{};
     Vector<8> P2{};
+};
+struct alignas(32) MassConstraint {
+    SymMatrix<8> C{};
+    Matrix<7, 7> jacob{};
+    Vector<8> P{};
 };
 }  // namespace Result
 
@@ -87,14 +90,32 @@ class alignas(32) Particle {
 
     Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
-    Result::MinPart2Vtx MinimizeLinePoint(const Vector<3> &xyz) const;
-    Result::MinPart2Vtx MinimizeHelixPoint(const Vector<3> &xyz, double bz) const;
+    Result::Minimization MinimizeLinePoint(const Vector<3> &v) const;
+    Result::Minimization MinimizeHelixPoint(const Vector<3> &v, double bz) const;
+    Result::Minimization Minimize(const Vector<3> &v, double bz = 0) const {
+        if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
+            return MinimizeLinePoint(v);
+        }
+        return MinimizeHelixPoint(v, bz);
+    }
 
-    std::pair<Result::MinPart2Part, Result::MinPart2Part> MinimizeLineLine(const Particle &p) const;
-    std::pair<Result::MinPart2Part, Result::MinPart2Part> MinimizeHelixHelix(const Particle &p, double bz) const;
+    std::pair<Result::Minimization, Result::Minimization> MinimizeLineLine(const Particle &p) const;
+    std::pair<Result::Minimization, Result::Minimization> MinimizeHelixHelix(const Particle &p, double bz) const;
+    std::pair<Result::Minimization, Result::Minimization> Minimize(const Particle &p, double bz = 0.) const {
+        if ((std::abs(fQ) < Const::AbsAlmostZero && std::abs(p.fQ) < Const::AbsAlmostZero) || std::abs(bz) < Const::AbsAlmostZero) {
+            return MinimizeLineLine(p);
+        }
+        return MinimizeHelixHelix(p, bz);
+    }
 
-    Result::Transport TransportBz(const Result::MinPart2Part &min, double bz) const;
-    Result::Transport TransportLine(const Result::MinPart2Part &min) const;
+    Result::Transport TransportBz(const Result::Minimization &min, double bz) const;
+    Result::Transport TransportLine(const Result::Minimization &min) const;
+    Result::Transport Transport(const Result::Minimization &min, double bz = 0.) const {
+        if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
+            return TransportLine(min);
+        }
+        return TransportBz(min, bz);
+    }
 
     // define the construction method for the current particle (see description of fConstructMethod)
     void SetConstructMethod(int m) { fConstructMethod = m; }
@@ -134,7 +155,7 @@ class alignas(32) Particle {
     double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
     SymMatrix<6> Cov_6x6() const {
         SymMatrix<6> cov;
-        for (int i{0}; i < (6 * (6 + 1) / 2); i++) cov[i] = fC[i];
+        for (int i{0}; i < (6 * (6 + 1) / 2); ++i) cov[i] = fC[i];
         return cov;
     }
 
@@ -155,15 +176,32 @@ class alignas(32) Particle {
     double &Covariance(int i) { return fC[i]; }                // modifier of C[i] element of the covariance matrix in the lower triangular form
     double &Covariance(int i, int j) { return fC[IJ(i, j)]; }  // modifier of C[i,j] element of the covariance matrix
 
-    void AddDaughter(const Particle &daughter, double bz);
     void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
     void AddDaughterWithEnergyFitMC(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    void AddDaughter(const Particle &daughter, double bz) {
+        if (fNDF < -1) {  // first daughter -> just copy
+            fNDF += 2;
+            fQ = daughter.GetQ();
+            for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
+            for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
+            fMassHypo = daughter.fMassHypo;
+            fSumDaughterMass = daughter.fSumDaughterMass;
+            return;
+        }
 
-    void SetNonlinearMassConstraint(double mass);
-    void SetMassConstraint(double mass, double sigma_mass = 0);
-    void SetMassConstraint(Vector<8> &mP, SymMatrix<8> &mC, Matrix<7, 7> &mJ, double mass) const;
+        if (fConstructMethod == 0)
+            AddDaughterWithEnergyFit(daughter, bz);
+        else if (fConstructMethod == 2)
+            AddDaughterWithEnergyFitMC(daughter, bz);
 
-    void SetProductionVertex(const Particle &vtx, double bz);
+        fSumDaughterMass += daughter.fSumDaughterMass;
+        fMassHypo = -1.;
+    }
+
+    void AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
+
+    Result::MassConstraint SetMassConstraint(double mass) const;
+    void SetLinearMassConstraint(double mass, double sigma_mass = 0);
 
     void Print() {
         std::cout << "(X,Y,Z)      = " << fP[0] << "    " << fP[1] << "    " << fP[2] << '\n';
