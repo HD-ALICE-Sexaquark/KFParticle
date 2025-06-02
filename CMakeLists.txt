@@ -45,7 +45,7 @@ endmacro()
 # some definitions #
 
 set(SOURCES KFParticle/KFParticle.cxx)
-set(HEADERS KFParticle/KFParticle.h KFParticle/KFParticle_Math.hxx)
+set(HEADERS KFParticle/KFParticle.hxx KFParticle/KFParticle_Math.hxx)
 
 # main target #
 
