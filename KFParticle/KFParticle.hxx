@@ -31,9 +31,14 @@
 
 namespace KF {
 
-struct alignas(32) Cache {
+struct alignas(32) PCA {
+    PCA() = default;
+    PCA(double x, double y, double z, double px, double py, double pz) : pos{x, y, z}, dir{px, py, pz} {};
+    Vector<3> pos{};
     Vector<3> dir{};
-    Vector<3> pca{};
+};
+struct alignas(32) Cache {
+    PCA pca;
     double theta{0.};
     double sin{0.};
     double cos{0.};
@@ -176,9 +181,9 @@ class alignas(32) Particle {
     double &Covariance(int i) { return fC[i]; }                // modifier of C[i] element of the covariance matrix in the lower triangular form
     double &Covariance(int i, int j) { return fC[IJ(i, j)]; }  // modifier of C[i,j] element of the covariance matrix
 
-    void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    void AddDaughterWithEnergyFitMC(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    void AddDaughter(const Particle &daughter, double bz) {
+    std::pair<PCA, PCA> AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    std::pair<PCA, PCA> AddDaughterWithEnergyFitMC(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    std::pair<PCA, PCA> AddDaughter(const Particle &daughter, double bz) {
         if (fNDF < -1) {  // first daughter -> just copy
             fNDF += 2;
             fQ = daughter.GetQ();
@@ -186,19 +191,18 @@ class alignas(32) Particle {
             for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
             fMassHypo = daughter.fMassHypo;
             fSumDaughterMass = daughter.fSumDaughterMass;
-            return;
+            return {{X(), Y(), Z(), Px(), Py(), Pz()},  //
+                    {X(), Y(), Z(), Px(), Py(), Pz()}};
         }
-
-        if (fConstructMethod == 0)
-            AddDaughterWithEnergyFit(daughter, bz);
-        else if (fConstructMethod == 2)
-            AddDaughterWithEnergyFitMC(daughter, bz);
 
         fSumDaughterMass += daughter.fSumDaughterMass;
         fMassHypo = -1.;
+
+        if (fConstructMethod == 0) return AddDaughterWithEnergyFit(daughter, bz);
+        return AddDaughterWithEnergyFitMC(daughter, bz);
     }
 
-    void AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
+    PCA AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
 
     Result::MassConstraint SetMassConstraint(double mass) const;
     void SetLinearMassConstraint(double mass, double sigma_mass = 0);
