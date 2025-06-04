@@ -74,8 +74,6 @@ void Particle::Initialize(const Vector<6>& param, const SymMatrix<6>& cov, int c
     fC[35] = 1.;
 
     fQ = charge;
-    fSumDaughterMass = mass;
-    fMassHypo = mass;
 #if KF_DEBUG
     PrintSymMatrix<8>(__FUNCTION__, "CovMatrix", fC);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
@@ -395,261 +393,6 @@ std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter,
             {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
 }
 
-// Add daughter to the current particle. Uses slower but correct mathematics,
-// which requires that the masses of daughter particles stays fixed in the construction process.
-// Input arguments:
-// - daughter       : the daughter particle
-// - bz             : z-component of magnetic field
-// - chi2_threshold : do an early cut of chi2
-// Return: (packed as two `KF::PCA` structs)
-// - point of closest approach (PCA) coordinates
-// - 3-momentum at PCA
-// Note: it will modify the state of the current KF::Particle
-std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFitMC(const Particle& daughter, double bz, double chi2_threshold) {
-#if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
-#endif
-
-    auto meas = GetMeasurement(daughter, bz);
-
-    SymMatrix<3> mS{meas.C1[0] + meas.C2[0],                           //
-                    meas.C1[1] + meas.C2[1], meas.C1[2] + meas.C2[2],  //
-                    meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
-    InvertCholesky3(mS);
-#if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "meas.P1", meas.P1);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C1", meas.C1);
-    PrintVector<8>(__FUNCTION__, "meas.P2", meas.P2);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C2", meas.C2);
-    PrintMatrix<3, 3>(__FUNCTION__, "meas.D", meas.D);
-    PrintSymMatrix<3>(__FUNCTION__, "mS", mS);
-#endif
-
-    Vector<3> zeta{meas.P2[0] - meas.P1[0], meas.P2[1] - meas.P1[1], meas.P2[2] - meas.P1[2]};
-    double dChi2{(mS[0] * zeta[0] + mS[1] * zeta[1] + mS[3] * zeta[2]) * zeta[0] + (mS[1] * zeta[0] + mS[2] * zeta[1] + mS[4] * zeta[2]) * zeta[1] +
-                 (mS[3] * zeta[0] + mS[4] * zeta[1] + mS[5] * zeta[2]) * zeta[2]};
-#if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "zeta", zeta);
-    PrintValue(__FUNCTION__, "dChi2", dChi2);
-#endif
-    if (dChi2 > chi2_threshold) {
-        return {{meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]},
-                {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
-    }
-
-    // Kalman gain for current particle //
-
-    Vector<7> mCHt0{meas.C1[0], meas.C1[1], meas.C1[3], meas.C1[6], meas.C1[10], meas.C1[15], meas.C1[21]};
-    Vector<7> mCHt1{meas.C1[1], meas.C1[2], meas.C1[4], meas.C1[7], meas.C1[11], meas.C1[16], meas.C1[22]};
-    Vector<7> mCHt2{meas.C1[3], meas.C1[4], meas.C1[5], meas.C1[8], meas.C1[12], meas.C1[17], meas.C1[23]};
-
-    Vector<7> k0{};
-    Vector<7> k1{};
-    Vector<7> k2{};
-    for (int i{0}; i < 7; ++i) {
-        k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
-        k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
-        k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
-    }
-
-    // Kalman gain for second particle //
-
-    Vector<7> mVHt0{meas.C2[0], meas.C2[1], meas.C2[3], meas.C2[6], meas.C2[10], meas.C2[15], meas.C2[21]};
-    Vector<7> mVHt1{meas.C2[1], meas.C2[2], meas.C2[4], meas.C2[7], meas.C2[11], meas.C2[16], meas.C2[22]};
-    Vector<7> mVHt2{meas.C2[3], meas.C2[4], meas.C2[5], meas.C2[8], meas.C2[12], meas.C2[17], meas.C2[23]};
-
-    Vector<7> km0{};
-    Vector<7> km1{};
-    Vector<7> km2{};
-    for (int i{0}; i < 7; ++i) {
-        km0[i] = mVHt0[i] * mS[0] + mVHt1[i] * mS[1] + mVHt2[i] * mS[3];
-        km1[i] = mVHt0[i] * mS[1] + mVHt1[i] * mS[2] + mVHt2[i] * mS[4];
-        km2[i] = mVHt0[i] * mS[3] + mVHt1[i] * mS[4] + mVHt2[i] * mS[5];
-    }
-
-    for (int i{0}; i < 7; ++i) fP[i] = meas.P1[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
-
-    for (int i{0}; i < 7; ++i) meas.P2[i] = meas.P2[i] - km0[i] * zeta[0] - km1[i] * zeta[1] - km2[i] * zeta[2];
-
-    for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) {
-            fC[k] = meas.C1[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
-        }
-    }
-
-    for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) meas.C2[k] = meas.C2[k] - (km0[i] * mVHt0[j] + km1[i] * mVHt1[j] + km2[i] * mVHt2[j]);
-    }
-
-#if KF_DEBUG
-    PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    PrintSplitMatrix<7>(__FUNCTION__, "KGain1", k0, k1, k2);
-    PrintSplitMatrix<7>(__FUNCTION__, "mVH", mVHt0, mVHt1, mVHt2);
-    PrintSplitMatrix<7>(__FUNCTION__, "KGain2", km0, km1, km2);
-    PrintVector<8>(__FUNCTION__, "fP1 (after Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC1 (after Kalman gain)", fC);
-    PrintVector<8>(__FUNCTION__, "fP2 (after Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC2 (after Kalman gain)", fC);
-#endif
-
-    // mass constraint section //
-
-    Matrix<7, 7> mDf{};
-    double dm2{4. * (fP[3] * fP[3] * fC[9] + fP[4] * fP[4] * fC[14] + fP[5] * fP[5] * fC[20] + fP[6] * fP[6] * fC[27] +
-                     2. * (fP[3] * fP[4] * fC[13] + fP[5] * (fP[3] * fC[18] + fP[4] * fC[19]) -
-                           fP[6] * (fP[3] * fC[24] + fP[4] * fC[25] + fP[5] * fC[26])))};
-
-    for (int i{0}; i < 7; ++i) {
-        for (int j{0}; j < 7; ++j) mDf[i][j] = km0[i] * mCHt0[j] + km1[i] * mCHt1[j] + km2[i] * mCHt2[j];
-    }
-
-    double mMassParticle{fP[6] * fP[6] - fP[3] * fP[3] - fP[4] * fP[4] - fP[5] * fP[5]};
-    double mMassDaughter{meas.P2[6] * meas.P2[6] - meas.P2[3] * meas.P2[3] - meas.P2[4] * meas.P2[4] - meas.P2[5] * meas.P2[5]};
-    if (mMassParticle > 0.) mMassParticle = std::sqrt(mMassParticle);
-    if (mMassDaughter > 0.) mMassDaughter = std::sqrt(mMassDaughter);
-
-    Result::MassConstraint mc1;
-    Result::MassConstraint mc2;
-    if (fMassHypo > -0.5)
-        mc1 = SetMassConstraint(fMassHypo);
-    else if ((mMassParticle < fSumDaughterMass) || (fP[6] < 0.))
-        mc1 = SetMassConstraint(fSumDaughterMass);
-
-    if (daughter.fMassHypo > -0.5)
-        mc2 = daughter.SetMassConstraint(daughter.fMassHypo);
-    else if ((mMassDaughter < daughter.fSumDaughterMass) || (meas.P2[6] < 0.))
-        mc2 = daughter.SetMassConstraint(daughter.fSumDaughterMass);
-
-    Matrix<7, 7> mDJ{};
-    for (int i{0}; i < 7; ++i) {
-        for (int j{0}; j < 7; ++j) {
-            for (int k{0}; k < 7; ++k) mDJ[i][j] += mDf[i][k] * mc1.jacob[j][k];
-        }
-    }
-
-    for (int i{0}; i < 7; ++i) {
-        for (int j{0}; j < 7; ++j) {
-            for (int l{0}; l < 7; ++l) mDf[i][j] += mc2.jacob[i][l] * mDJ[l][j];
-        }
-    }
-
-    double residual{};  // ???
-    dChi2 += residual * residual / dm2;
-    fNDF += 1;
-
-    // fMassHypo = mass; // ???
-    // fSumDaughterMass = mass; // ???
-
-#if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "fP (after mass constraint)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (after mass constraint)", fC);
-#endif
-
-    // add daughter's momentum to particle momentum //
-
-    fP[3] += meas.P2[3];
-    fP[4] += meas.P2[4];
-    fP[5] += meas.P2[5];
-    fP[6] += meas.P2[6];
-
-    fC[9] += meas.C2[9];
-    fC[13] += meas.C2[13];
-    fC[14] += meas.C2[14];
-    fC[18] += meas.C2[18];
-    fC[19] += meas.C2[19];
-    fC[20] += meas.C2[20];
-    fC[24] += meas.C2[24];
-    fC[25] += meas.C2[25];
-    fC[26] += meas.C2[26];
-    fC[27] += meas.C2[27];
-
-    fC[6] += mDf[3][0];
-    fC[7] += mDf[3][1];
-    fC[8] += mDf[3][2];
-    fC[10] += mDf[4][0];
-    fC[11] += mDf[4][1];
-    fC[12] += mDf[4][2];
-    fC[15] += mDf[5][0];
-    fC[16] += mDf[5][1];
-    fC[17] += mDf[5][2];
-    fC[21] += mDf[6][0];
-    fC[22] += mDf[6][1];
-    fC[23] += mDf[6][2];
-
-    fC[9] += mDf[3][3] + mDf[3][3];
-    fC[13] += mDf[4][3] + mDf[3][4];
-    fC[14] += mDf[4][4] + mDf[4][4];
-    fC[18] += mDf[5][3] + mDf[3][5];
-    fC[19] += mDf[5][4] + mDf[4][5];
-    fC[20] += mDf[5][5] + mDf[5][5];
-    fC[24] += mDf[6][3] + mDf[3][6];
-    fC[25] += mDf[6][4] + mDf[4][6];
-    fC[26] += mDf[6][5] + mDf[5][6];
-    fC[27] += mDf[6][6] + mDf[6][6];
-#if KF_DEBUG
-    PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    PrintSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
-    PrintVector<8>(__FUNCTION__, "fP (after Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (after Kalman gain)", fC);
-#endif
-
-    // do something else? //
-
-    Matrix<3, 3> K{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
-        }
-    }
-
-    Matrix<3, 3> K2;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
-        K2[i][i] += 1.;
-    }
-
-    Matrix<3, 3> A;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            A[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
-        }
-    }
-
-    Matrix<3, 3> M;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            M[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
-        }
-    }
-
-    fC[0] += 2. * M[0][0];
-    fC[1] += M[0][1] + M[1][0];
-    fC[2] += 2. * M[1][1];
-    fC[3] += M[0][2] + M[2][0];
-    fC[4] += M[1][2] + M[2][1];
-    fC[5] += 2. * M[2][2];
-#if KF_DEBUG
-    PrintMatrix<3, 3>(__FUNCTION__, "K", K);
-    PrintMatrix<3, 3>(__FUNCTION__, "K2", K2);
-    PrintMatrix<3, 3>(__FUNCTION__, "A", A);
-    PrintMatrix<3, 3>(__FUNCTION__, "M", M);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (the end)", fC);
-#endif
-
-    // update rest of properties //
-
-    fNDF += 2;
-    fQ += daughter.GetQ();
-    fChi2 += dChi2;
-#if KF_DEBUG
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
-#endif
-    return {{meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]},
-            {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
-}
-
 // Transport particle to production vertex.
 // Input arguments:
 // - prod_vtx       : assumed production vertex
@@ -825,168 +568,51 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     return min2decay.pca;
 }
 
-// Set the exact nonlinear mass constraint on the state vector mP with the covariance matrix mC.
-// Uses:
-// - fP : the state vector to be modified
-// - fC : the corresponding covariance matrix
-// Input arguments:
-// - mass  : the mass to be set on the state vector mP
-// Return:
-// - jacob : the Jacobian between initial and modified parameters
-// Note: it will modify the state of the current KF::Particle
-Result::MassConstraint Particle::SetMassConstraint(double mass) const {
+// Set mass constraint on the current particle.
+// Constraint equation g(...) : E^2 - (Px^2 + Py^2 + Pz^2) - target_mass^2 = 0
+// Input argument:
+// - `mass` : the mass to be set on the state vector mP
+// Note: it will modify the state of the current `KF::Particle`
+void Particle::AddMassConstraint(double target_mass) {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
-    // initial values //
-    double px{fP[3]};
-    double py{fP[4]};
-    double pz{fP[5]};
-    double energy{fP[6]};
-
-    // substitute the transformations into the mass-shell condition leads to a polynomial equation: //
-    //   f(lambda) = -mass^2 * lambda^4 + a * lambda^2 + b * lambda + c = 0                         //
-    double energy2{energy * energy};
-    double p2{px * px + py * py + pz * pz};
-    double mass2{mass * mass};
-
-    double a_coeff{energy2 - p2 + 2. * mass2};
-    double b_coeff{-2. * (energy2 + p2)};
-    double c_coeff{energy2 - p2 - mass2};
-
-    // initial guess for lambda //
-    // 1. if b is non-zero, try a linear approximation //
-    double lambda{std::abs(b_coeff) > Const::AbsAlmostZero ? -c_coeff / b_coeff : 0.};
-    // 2. if d positive and a is non-zero, try a refined guess //
-    double d_coeff{4. * energy2 * p2 - mass2 * (energy2 - p2 - 2. * mass2)};
-    if (d_coeff >= 0. && std::abs(a_coeff) > Const::AbsAlmostZero) lambda = (energy2 + p2 - std::sqrt(d_coeff)) / a_coeff;
-
-    // newton-raphson approximation //
-    for (int i{0}; i < 100; ++i) {
-        double lambda2{lambda * lambda};
-        double lambda0{lambda};
-
-        double f_val{-mass2 * lambda2 * lambda2 + a_coeff * lambda2 + b_coeff * lambda + c_coeff};  // = f(lambda)
-        double df_val{-4. * mass2 * lambda2 * lambda + 2. * a_coeff * lambda + b_coeff};            // = f'(lambda)
-
-        if (std::abs(df_val) < Const::AbsAlmostZero) break;  // protection
-
-        lambda -= f_val / df_val;
-        if (std::abs(lambda0 - lambda) < Const::AbsAlmostZero) break;  // reached convergence
-    }
-#if KF_DEBUG
-    PrintValue(__FUNCTION__, "lambda", lambda);
-#endif
-
-    double one_plus_lambda{1. + lambda};
-    double one_plus_lambda_sq{(1. + lambda) * (1. + lambda)};
-    double one_minus_lambda{1. - lambda};
-    double one_minus_lambda_sq{(1. - lambda) * (1. - lambda)};
-
-    // protection if lambda is +-1 //
-    double lpi{(std::abs(one_plus_lambda) < Const::AbsAlmostZero) ? Const::BigNumber : 1. / one_plus_lambda};
-    double lmi{(std::abs(one_minus_lambda) < Const::AbsAlmostZero) ? Const::BigNumber : 1. / one_minus_lambda};
-
-    // = df(...)/dlambda ; evaluated at the final lambda //
-    double dfl{-4. * mass2 * lambda * lambda * lambda + 2. * a_coeff * lambda + b_coeff};
-
-    // = df(...)/dx_i for x_i={px,py,pz,E} ; evaluated at their initial values //
-    Vector<4> dfx{-2. * one_plus_lambda_sq * px, -2. * one_plus_lambda_sq * py, -2. * one_plus_lambda_sq * pz, 2. * one_minus_lambda_sq * energy};
-
-    // = dlambda/dx_i (implicit function theorem) //
-    Vector<4> dlx{1., 1., 1., 1.};
-    if (std::abs(dfl) > Const::AbsAlmostZero) {
-        for (int i{0}; i < 4; ++i) dlx[i] = -dfx[i] / dfl;
-    }
-
-    double lm2i{lmi * lmi};
-    double lp2i{lpi * lpi};
-
-    // = dx_f/dlambda //
-    Vector<4> dxx{px * lm2i, py * lm2i, pz * lm2i, -energy * lp2i};
-
-    // prepare output //
-    Result::MassConstraint res;
-
-    // build jacobian via chain rule : dx_f/dx_i = dx_f/dlambda * dlambda/dx_i + 1/(1 +- lambda) //
-    res.jacob[0][0] = 1.;
-    res.jacob[1][1] = 1.;
-    res.jacob[2][2] = 1.;
-    for (int i{3}; i < 7; ++i) {
-        for (int j{3}; j < 7; ++j) res.jacob[i][j] = dlx[j - 3] * dxx[i - 3];
-    }
-    for (int i{3}; i < 6; ++i) res.jacob[i][i] += lmi;
-    res.jacob[6][6] += lpi;
-
-    // update covariance matrix : C' = Jacob * C * Jacob^T //
-    Matrix<7, 7> mCJ{};
-    for (int i{0}; i < 7; ++i) {
-        for (int j{0}; j < 7; ++j) {
-            for (int k{0}; k < 7; ++k) {
-                mCJ[i][j] += fC[IJ(i, k)] * res.jacob[j][k];
-            }
-        }
-    }
-    for (int i{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j) {
-            for (int l{0}; l < 7; ++l) {
-                res.C[IJ(i, j)] += res.jacob[i][l] * mCJ[l][j];
-            }
-        }
-    }
-
-    // finally apply transformations //
-    res.P = fP;
-    res.P[3] *= lmi;
-    res.P[4] *= lmi;
-    res.P[5] *= lmi;
-    res.P[6] *= lpi;
-
-#if KF_DEBUG
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
-#endif
-    return res;
-}
-
-// Set linearised mass constraint on the current particle. The constraint can be set with an uncertainty.
-// \param[in] Mass - the mass to be set on the state vector mP
-// \param[in] SigmaMass - uncertainty of the constraint
-void Particle::SetLinearMassConstraint(double mass, double sigma_mass) {
-
-    fMassHypo = mass;
-    fSumDaughterMass = mass;
-
-    double m2{mass * mass};                   // measurement, weighted by mass
-    double s2{m2 * sigma_mass * sigma_mass};  // sigma^2
-
+    double m2{target_mass * target_mass};
     double p2{fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]};
-    double e0{std::sqrt(m2 + p2)};
 
+    // jacobian = d g(...) / dr //
     Vector<8> mH{0., 0., 0., -2 * fP[3], -2 * fP[4], -2 * fP[5], 2 * fP[6], 0.};
 
-    double zeta{e0 * e0 - e0 * fP[6]};
-    zeta = m2 - (fP[6] * fP[6] - p2);
+    // residual = target_mass^2 - current_mass^2 //
+    double zeta{m2 - fP[6] * fP[6] + p2};
 
-    Vector<8> mCHt;
-    double s2_est{0.};
+    double s2{0.};
+    Vector<8> mCHt{};
     for (int i{0}; i < 8; ++i) {
         for (int j{0}; j < 8; ++j) mCHt[i] += Cij(i, j) * mH[j];
-        s2_est += mH[i] * mCHt[i];
+        s2 += mH[i] * mCHt[i];
     }
 
-    if (s2_est < 1.e-20)
-        return;  // calculated mass error is already 0,
-                 // the particle can not be constrained on mass
+    if (std::abs(s2) < Const::AbsAlmostZero) return;  // protection
 
-    double w2{1. / (s2 + s2_est)};
-    fChi2 += zeta * zeta * w2;
-    fNDF += 1;
+    // apply Kalman filter update //
     for (int i{0}, ii{0}; i < 8; ++i) {
-        double ki{mCHt[i] * w2};
+        // i-th component of Kalman gain vector //
+        double ki{mCHt[i] / s2};
+        // update state //
         fP[i] += ki * zeta;
-        for (int j{0}; j <= i; ++j) fC[++ii] -= ki * mCHt[j];
+        // update cov matrix //
+        for (int j{0}; j <= i; ++j, ++ii) fC[ii] -= ki * mCHt[j];
     }
+
+    fChi2 += zeta * zeta / s2;
+    fNDF += 1;  // one d.o.f. is added because a single independent constraint has been applied
+#if KF_DEBUG
+    PrintVector<8>(__FUNCTION__, "fP", fP);
+    PrintSymMatrix<8>(__FUNCTION__, "fC", fC);
+    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
 }
 
 // Return dS = l/p parameter, where
@@ -1044,7 +670,7 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     PrintValue(__FUNCTION__, "min.ds", min.ds);
     PrintVector<6>(__FUNCTION__, "min.ds_dr", min.ds_dr);
     PrintVector<6>(__FUNCTION__, "min.ds_dr1", min.ds_dr1);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z)", min.pca);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z)", min.pca.pos);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
     return min;
@@ -1108,7 +734,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     min.pca.dir[2] = pz0;
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min.ds (no z-correction)", min.ds);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.pos);
     // PrintValue(__FUNCTION__, "dx", dx); // PENDING
     // PrintValue(__FUNCTION__, "dy", dy); // PENDING
     // PrintValue(__FUNCTION__, "dz", dz); // PENDING
@@ -1209,7 +835,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     dS += std::atan2(abq, p2 + bq * (dy * p[3] - dx * p[4])) / bq;
     */
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca.pos);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
@@ -1368,9 +994,9 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     }
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min1.ds (no z-correction)", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.pos);
     PrintValue(__FUNCTION__, "min2.ds (no z-correction)", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.pos);
     PrintValue(__FUNCTION__, "dx", dx);
     PrintValue(__FUNCTION__, "dy", dy);
     PrintValue(__FUNCTION__, "dz", dz);
@@ -1681,8 +1307,8 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     min2.pca.dir[1] = -min2.sin * px02 + min2.cos * py02;
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca.pos);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
@@ -1754,9 +1380,9 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min1.ds", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.pos);
     PrintValue(__FUNCTION__, "min2.ds", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.pos);
 #endif
 
     // handle derivatives //

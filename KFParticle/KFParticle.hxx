@@ -122,12 +122,6 @@ class alignas(32) Particle {
         return TransportBz(min, bz);
     }
 
-    // define the construction method for the current particle (see description of fConstructMethod)
-    void SetConstructMethod(int m) { fConstructMethod = m; }
-    void SetMassHypo(double m) { fMassHypo = m; }            // set the mass hypothesis to the particle, is used when fConstructMethod = 2
-    const double &GetMassHypo() const { return fMassHypo; }  // return the mass hypothesis
-    const double &GetSumDaughterMass() const { return fSumDaughterMass; }  // return the sum of masses of the daughters
-
     // Accessors
     Vector<3> XYZ() const { return {fP[0], fP[1], fP[2]}; }                             // PENDING: copies
     Vector<6> XYZPxPyPz() const { return {fP[0], fP[1], fP[2], fP[3], fP[4], fP[5]}; }  // PENDING: copies
@@ -182,30 +176,21 @@ class alignas(32) Particle {
     double &Covariance(int i, int j) { return fC[IJ(i, j)]; }  // modifier of C[i,j] element of the covariance matrix
 
     std::pair<PCA, PCA> AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    std::pair<PCA, PCA> AddDaughterWithEnergyFitMC(const Particle &daughter, double bz, double chi2_threshold = 1E4);
     std::pair<PCA, PCA> AddDaughter(const Particle &daughter, double bz) {
         if (fNDF < -1) {  // first daughter -> just copy
             fNDF += 2;
             fQ = daughter.GetQ();
             for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
             for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
-            fMassHypo = daughter.fMassHypo;
-            fSumDaughterMass = daughter.fSumDaughterMass;
             return {{X(), Y(), Z(), Px(), Py(), Pz()},  //
                     {X(), Y(), Z(), Px(), Py(), Pz()}};
         }
 
-        fSumDaughterMass += daughter.fSumDaughterMass;
-        fMassHypo = -1.;
-
-        if (fConstructMethod == 0) return AddDaughterWithEnergyFit(daughter, bz);
-        return AddDaughterWithEnergyFitMC(daughter, bz);
+        return AddDaughterWithEnergyFit(daughter, bz);
     }
 
     PCA AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
-
-    Result::MassConstraint SetMassConstraint(double mass) const;
-    void SetLinearMassConstraint(double mass, double sigma_mass = 0);
+    void AddMassConstraint(double target_mass);
 
     void Print() {
         std::cout << "(X,Y,Z)      = " << fP[0] << "    " << fP[1] << "    " << fP[2] << '\n';
@@ -217,18 +202,11 @@ class alignas(32) Particle {
 
    protected:
     double &Cij(int i, int j) { return fC[IJ(i, j)]; }
-    SymMatrix<8> fC{};            // low-triangle covariance matrix of fP
-    Vector<8> fP{};               // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
-    double fChi2{0.};             // chi2
-    double fSumDaughterMass{0.};  // sum of the daughter particles masses Needed to set the constraint on the minimum mass during particle
-    double fMassHypo{-1.};        // the mass hypothesis, used for the constraints during particle construction
-    int fNDF{-3};                 // number of degrees of freedom
-    int fQ{0};                    // the charge of the particle in units of elementary charge
-
-    // Determine particle construction method.
-    // 0 - Energy considered as an independent variable, fitted independently from momentum, without any constraints on mass
-    // 2 - Energy considered as an independent variable, fitted independently from momentum, with constraints on mass of daughter particle
-    int fConstructMethod{0};
+    SymMatrix<8> fC{};  // low-triangle covariance matrix of fP
+    Vector<8> fP{};     // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
+    double fChi2{0.};   // chi2
+    int fNDF{-3};       // number of degrees of freedom
+    int fQ{0};          // the charge of the particle in units of elementary charge
 };
 
 }  // namespace KF
