@@ -25,8 +25,6 @@ int main() {
                          -4.4071909055788304E-06, -0.00048870318030618627, 3.8062554692505919E-05,  1.2177141510445709E-05, 7.6900178535210476E-06,
                          6.6224441962932268E-06,  0.00034363110217286891,  -0.00031520420397528146, -1.6277704753223909E-05, -3.4322154557097545E-06, 1.027411488502718E-05};
     // clang-format on
-    // track1.SetNDF(1);
-    // track1.SetChi2(1.5);
     KF::Particle p1{pp1, cc1, -1, pion_mass};
 
     // Particle 2 //
@@ -41,8 +39,6 @@ int main() {
                          -2.2044831998838091E-05, -0.00059994741249631909, 0.00030148707952079015,  -4.6574515272730461E-06, 7.2618497455845866E-06,
                          -1.2427988441207971E-06, 0.00030830063771211896,  -0.00061853865528922161, 5.4390968700069889E-06, -1.9914477627292868E-06, 8.9837108094398403E-06};
     // clang-format on
-    // track2.SetNDF(2);
-    // track2.SetChi2(2.5);
     KF::Particle p2{pp2, cc2, +1, pion_mass};
 
     // Composite Particle A (mass constraint OFF, vertex hypothesis OFF) //
@@ -54,9 +50,9 @@ int main() {
     cpA.AddDaughter(p1, b_field);
     cpA.AddDaughter(p2, b_field);
     cpA.Print();
-    std::cout << "=================================================================================" << '\n';
-    std::cout << "== END Composite Particle A (mass constraint OFF, vertex hypothesis OFF) START ==" << '\n';
-    std::cout << "=================================================================================" << '\n';
+    std::cout << "===================================================================================" << '\n';
+    std::cout << "== END   Composite Particle A (mass constraint OFF, vertex hypothesis OFF)   END ==" << '\n';
+    std::cout << "===================================================================================" << '\n';
 
     std::cout << '\n';
 
@@ -70,9 +66,9 @@ int main() {
     cpB.AddDaughter(p2, b_field);
     cpB.AddMassConstraint(k0s_mass);
     cpB.Print();
-    std::cout << "==============================================================================" << '\n';
-    std::cout << "== END Composite Particle B (mass constraint ON, vertex hypothesis OFF) END ==" << '\n';
-    std::cout << "==============================================================================" << '\n';
+    std::cout << "==================================================================================" << '\n';
+    std::cout << "== END   Composite Particle B (mass constraint ON, vertex hypothesis OFF)   END ==" << '\n';
+    std::cout << "==================================================================================" << '\n';
 
     std::cout << '\n';
 
@@ -86,9 +82,9 @@ int main() {
     cpC.AddDaughter(p2, b_field);
     cpC.AddProductionVertex(vv0, cc0, b_field);
     cpC.Print();
-    std::cout << "==============================================================================" << '\n';
-    std::cout << "== END Composite Particle C (mass constraint OFF, vertex hypothesis ON) END ==" << '\n';
-    std::cout << "==============================================================================" << '\n';
+    std::cout << "==================================================================================" << '\n';
+    std::cout << "== END   Composite Particle C (mass constraint OFF, vertex hypothesis ON)   END ==" << '\n';
+    std::cout << "==================================================================================" << '\n';
 
     std::cout << '\n';
 
@@ -103,7 +99,7 @@ int main() {
     cpD.AddMassConstraint(k0s_mass);
     cpD.AddProductionVertex(vv0, cc0, b_field);
     cpD.Print();
-    std::cout << "=============================================================================" << '\n';
-    std::cout << "== END Composite Particle D (mass constraint ON, vertex hypothesis ON) END ==" << '\n';
-    std::cout << "=============================================================================" << '\n';
+    std::cout << "=================================================================================" << '\n';
+    std::cout << "== END   Composite Particle D (mass constraint ON, vertex hypothesis ON)   END ==" << '\n';
+    std::cout << "=================================================================================" << '\n';
 }

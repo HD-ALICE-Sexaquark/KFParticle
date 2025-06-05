@@ -28,58 +28,6 @@
 
 namespace KF {
 
-// Set Cxx=Cyy=Czz=100 and Css=1
-// Note: it will modify the state of the current KF::Particle
-void Particle::Initialize() {
-    fC[0] = 100.;
-    fC[2] = 100.;
-    fC[5] = 100.;
-    fC[35] = 1.;
-}
-
-// Set the parameters of the particle:
-//  \param[in] param[6] = { X, Y, Z, Px, Py, Pz } - position and momentum
-//  \param[in] cov[21]  - lower-triangular part of the 6x6 covariance matrix:
-//           (  0  .  .  .  .  . )
-//           (  1  2  .  .  .  . )
-// Cov[21] = (  3  4  5  .  .  . )
-//           (  6  7  8  9  .  . )
-//           ( 10 11 12 13 14  . )
-//           ( 15 16 17 18 19 20 )
-//  \param[in] charge - charge of the particle in elementary charge units
-//  \param[in] mass - the mass hypothesis
-// Note: it will modify the state of the current KF::Particle
-void Particle::Initialize(const Vector<6>& param, const SymMatrix<6>& cov, int charge, double mass) {
-#if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
-#endif
-
-    for (int i{0}; i < 6; ++i) fP[i] = param[i];
-    double energy = std::sqrt(mass * mass + fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]);
-    fP[6] = energy;
-    fP[7] = 0.;
-
-    double h0{fP[3] / energy};
-    double h1{fP[4] / energy};
-    double h2{fP[5] / energy};
-
-    for (int i{0}; i < 21; ++i) fC[i] = cov[i];
-    fC[21] = h0 * fC[6] + h1 * fC[10] + h2 * fC[15];
-    fC[22] = h0 * fC[7] + h1 * fC[11] + h2 * fC[16];
-    fC[23] = h0 * fC[8] + h1 * fC[12] + h2 * fC[17];
-    fC[24] = h0 * fC[9] + h1 * fC[13] + h2 * fC[18];
-    fC[25] = h0 * fC[13] + h1 * fC[14] + h2 * fC[19];
-    fC[26] = h0 * fC[18] + h1 * fC[19] + h2 * fC[20];
-    fC[27] = (h0 * h0 * fC[9] + h1 * h1 * fC[14] + h2 * h2 * fC[20] + 2 * (h0 * h1 * fC[13] + h0 * h2 * fC[18] + h1 * h2 * fC[19]));
-    fC[35] = 1.;
-
-    fQ = charge;
-#if KF_DEBUG
-    PrintSymMatrix<8>(__FUNCTION__, "CovMatrix", fC);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
-#endif
-}
-
 // Obtain the measurements from the current particle and the daughter to be added for the Kalman filter
 // mathematics.
 // If these are two first daughters they are transported to the point of the closest approach,
@@ -87,12 +35,12 @@ void Particle::Initialize(const Vector<6>& param, const SymMatrix<6>& cov, int c
 // vertex. The correlations are taken into account in the covariance matrices of both measurements,
 // the correlation matrix of two measurements is also calculated.
 // Input arguments:
-// - daughter : the daughter particle to be added
-// - bz       : z-component of homogeneous magnetic field
-// Return: (packed as a single `Result::Measurement` struct)
-// - P : the output parameters of the daughter particle at the DCA point
-// - V : the output covariance matrix of the daughter parameters, takes into account the correlation
-// - D : the correlation matrix between the current and daughter particles
+// - `daughter` : the daughter `KF::Particle` to be added
+// - `bz`       : z-component of homogeneous magnetic field
+// Return: (packed in a single `Result::Measurement` struct)
+// - `P` : the output parameters of the daughter particle at the DCA point
+// - `V` : the output covariance matrix of the daughter parameters, takes into account the correlation
+// - `D` : the correlation matrix between the current and daughter particles
 Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz) const {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
@@ -176,7 +124,7 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 
     // case: third (or above) daughter to be added //
     // >> transport to vertex //
-    auto min2 = daughter.Minimize(XYZ(), bz);
+    auto min2 = daughter.Minimize({fP[0], fP[1], fP[2]}, bz);
     auto tpr2 = daughter.Transport(min2, bz);
     Result::Measurement meas{fC, tpr2.C, Matrix<3, 3>{}, fP, tpr2.P};
 
@@ -232,13 +180,13 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 // is added as the measurement and the mass of the output short-lived particle can become
 // unphysical - smaller then the threshold.
 // Input arguments:
-// - daughter       : the daughter particle
-// - bz             : z-component of magnetic field
-// - chi2_threshold : do an early cut of chi2
+// - `daughter`       : the daughter `KF::Particle` to be added
+// - `bz`             : z-component of magnetic field
+// - `chi2_threshold` : do an early cut of chi2
 // Return: (packed as two `KF::PCA` structs)
-// - point of closest approach (PCA) coordinates
+// - PCA coordinates
 // - 3-momentum at PCA
-// Note: it will modify the state of the current KF::Particle
+// Note: it will modify the state of the current `KF::Particle`
 std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
@@ -393,16 +341,16 @@ std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter,
             {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
 }
 
-// Transport particle to production vertex.
+// Set a topological constraint on the current particle.
 // Input arguments:
-// - prod_vtx       : assumed production vertex
-// - prod_cov       : respective vertex's covariance matrix
-// - bz             : z-component of magnetic field
-// - chi2_threshold : do an early cut in chi2
-// Return: (packed as a single `KF::PCA` struct)
-// - point of closest approach (PCA)
+// - `prod_vtx`       : assumed production vertex
+// - `prod_cov`       : production vertex's covariance matrix
+// - `bz`             : z-component of magnetic field
+// - `chi2_threshold` : do an early cut in chi2
+// Return: (packed in a single `KF::PCA` struct)
+// - point of closest approach (PCA) coordinates
 // - 3-momentum at PCA
-// Note: it will modify the state of the current KF::Particle
+// Note: it will modify the state of the current `KF::Particle`
 // Note: should be executed as final step, after the particle has been added all of its daughters!
 PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>& prod_cov, double bz, double chi2_threshold) {
 #if KF_DEBUG
@@ -568,7 +516,7 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     return min2decay.pca;
 }
 
-// Set mass constraint on the current particle.
+// Set a mass constraint on the current particle.
 // Constraint equation g(...) : E^2 - (Px^2 + Py^2 + Pz^2) - target_mass^2 = 0
 // Input argument:
 // - `mass` : the mass to be set on the state vector mP
@@ -581,7 +529,7 @@ void Particle::AddMassConstraint(double target_mass) {
     double m2{target_mass * target_mass};
     double p2{fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5]};
 
-    // jacobian = d g(...) / dr //
+    // jacobian = d(g)/dr //
     Vector<8> mH{0., 0., 0., -2 * fP[3], -2 * fP[4], -2 * fP[5], 2 * fP[6], 0.};
 
     // residual = target_mass^2 - current_mass^2 //
@@ -590,7 +538,7 @@ void Particle::AddMassConstraint(double target_mass) {
     double s2{0.};
     Vector<8> mCHt{};
     for (int i{0}; i < 8; ++i) {
-        for (int j{0}; j < 8; ++j) mCHt[i] += Cij(i, j) * mH[j];
+        for (int j{0}; j < 8; ++j) mCHt[i] += fC[IJ(i, j)] * mH[j];
         s2 += mH[i] * mCHt[i];
     }
 
@@ -615,15 +563,11 @@ void Particle::AddMassConstraint(double target_mass) {
 #endif
 }
 
-// Return dS = l/p parameter, where
-// 1) l - signed distance to the DCA point with the input xyz point;
-// 2) p - momentum of the particle;
-// assuming the straigth line trajectory. Is used for particles with charge 0 or in case of zero magnetic field.
-// Also calculate partial derivatives dsdr of the parameter dS over the state vector of the current particle.
+// Find point of closest approach (PCA) of this particle w.r.t. an arbitrary vertex.
 // Input:
-// - v : point where particle should be transported
+// - `v` : arbitrary vertex
 // Return: (packed in a single `Result::Minimization` struct)
-// - dsdr : ds/dr partial derivatives of the parameter dS over the state vector of the current particle
+// - `ds_dr` : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1
 // TO CONSIDER: p2 and (p2*p2) cannot be zero
 Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
 #if KF_DEBUG
@@ -676,18 +620,14 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     return min;
 }
 
-// Return dS = l/p parameter, where
-// 1) l - signed distance to the DCA point with the input xyz point;
-// 2) p - momentum of the particle;
-// under the assumption of the constant homogeneous field Bz.
-// Also calculate partial derivatives dsdr of the parameter dS over the state vector of the current particle.
+// Find point of closest approach (PCA) of this particle w.r.t. an arbitrary vertex.
 // Input arguments:
-// - xyz : point to which particle should be transported
-// - bz  : z-component of homogeneouse magnetic field
-// Return: (packed as a single `Result::Minimization` struct)
-// - ds     :
-// - ds_dr  :
-// - ds_dr1 :
+// - `v`  : arbirtrary vertex
+// - `bz` : z-component of homogeneouse magnetic field
+// Return: (packed in a single `Result::Minimization` struct)
+// - `ds`     : transport parameters
+// - `ds_dr`  : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1
+// - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds2)/dr1, d(ds1)/dr2
 // - cache properties : dir, pca, theta, sin, cos, sB, cB
 Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz) const {
 #if KF_DEBUG
@@ -842,25 +782,14 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     return min;
 }
 
-// Calculate dS = l/p parameters for two particles, where
-// 1) l - signed distance to the DCA point with the other particle;
-// 2) p - momentum of the particle;
-// under the assumption of the constant homogeneous field Bz. dS[0] is the transport parameter for the current particle,
-// dS[1] - for the particle "p".
-// Also calculate partial derivatives dsdr of the parameters dS[0] and dS[1] over the state vectors of the particles:
-// 1) dsdr[0][6] = d(dS[0])/d(param1);
-// 2) dsdr[1][6] = d(dS[0])/d(param2);
-// 3) dsdr[2][6] = d(dS[1])/d(param1);
-// 4) dsdr[3][6] = d(dS[1])/d(param2);
-// where param1 are parameters of the current particle (if the pointer is not provided it is initialised with fP) and
-// param2 are parameters of the second particle "p" (if the pointer is not provided it is initialised with p.fP). Parameters
-// param1 and param2 should be either provided both or both set to null pointers.
+// Find point of closest approach (PCA) of this particle w.r.t. another one, assuming both or one of them have a helical trajectory.
 // Input arguments:
-// - p  : second particle
-// - bz : z-component of homogeneous magnetic field
-// Return: (packed as two `Result::Minimization` structs)
-// - dS   : transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
-// - dsdr : partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
+// - `p`  : second particle
+// - `bz` : z-component of homogeneous magnetic field
+// Return: (packed as a pair of `Result::Minimization` structs)
+// - `ds`     : transport parameters
+// - `ds_dr`  : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1, d(ds2)/dr2
+// - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds2)/dr1, d(ds1)/dr2
 std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHelix(const Particle& p, double bz) const {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
@@ -1315,22 +1244,13 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     return {min1, min2};
 }
 
-// Calculate dS = l/p parameters for two particles, where
-// 1) l - signed distance to the DCA point with the other particle;
-// 2) p - momentum of the particle;
-// under the assumption of the straight line trajectory. Is used for particles with charge 0 or in case of zero magnetic field.
-// dS[0] is the transport parameter for the current particle, dS[1] - for the particle "p".
-// Also calculate partial derivatives dsdr of the parameters dS[0] and dS[1] over the state vectors of the particles:
-// 1) dsdr[0][6] = d(dS[0])/d(param1)
-// 2) dsdr[1][6] = d(dS[0])/d(param2)
-// 3) dsdr[2][6] = d(dS[1])/d(param1)
-// 4) dsdr[3][6] = d(dS[1])/d(param2)
-// where param1 are parameters of the current particle fP and param2 are parameters of the second particle p.fP.
+// Find point of closest approach (PCA) of this particle w.r.t. another one, assuming both of them have a straight line trajectory.
 // Input arguments:
-// - p : second particle
+// - `p` : second particle
 // Return: (packed as a pair of `Result::Minimization` structs)
-// - dS[2] : transport parameters dS for the current particle (dS[0]) and the second particle "p" (dS[1])
-// - dsdr[4][6] : partial derivatives of the parameters dS[0] and dS[1] over the state vectors of the both particles
+// - `ds`     : transport parameters
+// - `ds_dr`  : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1, d(ds2)/dr2
+// - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds1)/dr2, d(ds2)/dr1
 std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine(const Particle& p) const {
 #if KF_DEBUG
     std::cout << "-- started (" << __FUNCTION__ << ") --" << '\n';
@@ -1425,26 +1345,17 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     return {min1, min2};
 }
 
-// Transport the parameters and their covariance matrix of the current particle assuming constant homogeneous
-// magnetic field Bz on the length defined by the transport parameter dS = l/p, where l is the signed distance and p is
-// the momentum of the current particle.
-// The obtained parameters and covariance matrix are stored to the arrays P and
-// C respectively. P and C can be set to the parameters fP and covariance matrix fC of the current particle. In this
-// case the particle parameters will be modified. Dependence of the transport parameter dS on the state vector of the
-// current particle is taken into account in the covariance matrix using partial derivatives dsdr = d(dS)/d(fP). If
-// a pointer to F is initialised the transport jacobian F = d(fP new)/d(fP old) is stored.
-// Since dS can depend on the state vector r1 of other particle or vertex, the corelation matrix
-// F1 = d(fP new)/d(r1) can be optionally calculated if a pointer F1 is provided.
+// Transport current particle assuming a helical trajectory (charged and under homogeneous magnetic field `bz`)
 // Input arguments: (packed in a single `Result::Minimization` struct)
-// - `dS`     : transport parameter which defines the distance to which particle should be transported
-// - `ds_dr`  : partial derivatives of the parameter ds over the state vector of the current particle = d(dS)/d(fP1)
-// - `ds_dr1` : partial derivatives of the parameter dS over the state vector of another particle or vertex = d(dS)/d(fP2)
-// - `bz`     : z-component of the constant homogeneous magnetic field Bz
-// Return: (packed as a single `Result::Transport` struct)
-// - `P`  : where transported parameters should be stored
-// - `C`  : where transported covariance matrix (8x8) should be stored in the lower triangular form
-// - `F`  : transport jacobian = d(fP new)/d(fP old)
-// - `F1` : correlation matrix = d(fP new)/d(r1)
+// - `ds`     : transport parameter
+// - `ds_dr`  : partial derivatives of ds w.r.t. state parameters = d(ds1)/dr1
+// - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds1)/dr2
+// - `bz`     : z-component of homogeneous magnetic field
+// Return: (packed in a single `Result::Transport` struct)
+// - `P`     : where transported parameters should be stored
+// - `C`     : where transported covariance matrix (8x8) should be stored in the lower triangular form
+// - `jacob` : transport jacobian = d(fP new)/d(fP old)
+// - `corr`  : correlation matrix = d(fP new)/d(r1)
 Result::Transport Particle::TransportBz(const Result::Minimization& min, double bz) const {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
@@ -1517,19 +1428,11 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     return tpr;
 }
 
-// Transport current particle assuming an straight line trajectory.
-// on the length defined by the transport parameter dS = l/p, where l is the signed distance and p is
-// the momentum of the current particle. The obtained parameters and covariance matrix are stored to the arrays P and
-// C respectively. P and C can be set to the parameters fP and covariance matrix fC of the current particle. In this
-// case the particle parameters will be modified. Dependence of the transport parameter dS on the state vector of the
-// current particle is taken into account in the covariance matrix using partial derivatives dsdr = d(dS)/d(fP). If
-// a pointer to F is initialised the transport jacobian F = d(fP new)/d(fP old) is stored.
-// Since dS can depend on the state vector r1 of other particle or vertex, the corelation matrix
-// F1 = d(fP new)/d(r1) can be optionally calculated if a pointer F1 is provided.
+// Transport current particle assuming an straight line trajectory (neutral or charged without magnetic field)
 // Input arguments: (packed in a single `Result::Minimization` struct)
-// - `dS`     : transport parameter which defines the distance to which particle should be transported
-// - `ds_dr`  : partial derivatives of the parameter ds over the state vector of the current particle = d(dS)/d(fP1)
-// - `ds_dr1` : partial derivatives of the parameter dS over the state vector of another particle or vertex = d(dS)/d(fP2)
+// - `ds`     : transport parameter
+// - `ds_dr`  : partial derivatives of ds w.r.t. state parameters = d(ds1)/dr1
+// - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds1)/dr2
 // Return: (packed in a single `Result::Transport` struct)
 // - `P`     : new transported state
 // - `C`     : new transported covariance matrix

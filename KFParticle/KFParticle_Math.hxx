@@ -57,11 +57,11 @@ static void PrintSymMatrix(std::string_view fcn_name, std::string_view name, con
     size_t max_n_row{1};
     for (size_t i{0}; i < N * (N + 1) / 2; ++i) {
         std::cout << arr[i];
-        n_in_row++;
+        ++n_in_row;
         if (n_in_row == max_n_row) {
             std::cout << '\n';
             n_in_row = 0;
-            max_n_row++;
+            ++max_n_row;
         } else {
             std::cout << "    ";
         }
@@ -94,6 +94,13 @@ static void PrintSplitMatrix(std::string_view fcn_name, std::string_view name, c
 template <typename D>
 inline D IJ(D i, D j) {
     return (j <= i) ? i * (i + 1) / 2 + j : j * (j + 1) / 2 + i;
+}
+
+template <size_t N, size_t M>
+inline Vector<M> Slice(const Vector<N> &in, size_t begin_i = 0) {
+    Vector<M> out{};
+    for (size_t i{begin_i}; i < M; ++i) out[i - begin_i] = in[i];
+    return out;
 }
 
 template <size_t L, size_t K, size_t N, size_t M>
@@ -150,8 +157,8 @@ inline void InvertCholesky3(SymMatrix<3> &a) {
 
 // Return matrix multiplication Q * S * Q^T.
 // Input arguments:
-// - Q : square matrix
-// - S : input symmetric matrix
+// - `Q` : square matrix
+// - `S` : input symmetric matrix
 template <size_t N>
 static SymMatrix<N> MultQSQt(const Matrix<N, N> &Q, const SymMatrix<N> &S) {
 

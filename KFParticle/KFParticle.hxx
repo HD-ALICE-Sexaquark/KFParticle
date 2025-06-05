@@ -20,8 +20,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef KFPARTICLE_H
-#define KFPARTICLE_H
+#ifndef KFPARTICLE_HXX
+#define KFPARTICLE_HXX
 
 #include <cmath>
 #include <iostream>
@@ -90,8 +90,115 @@ class alignas(32) Particle {
     Particle(const Vector<6> &p, const SymMatrix<6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
     ~Particle() = default;
 
-    void Initialize();
-    void Initialize(const Vector<6> &param, const SymMatrix<6> &cov, int charge, double mass);
+    double X() const { return fP[0]; }        // return X coordinate of the particle
+    double Y() const { return fP[1]; }        // return Y coordinate of the particle
+    double Z() const { return fP[2]; }        // return Z coordinate of the particle
+    double Px() const { return fP[3]; }       // return X component of the momentum
+    double Py() const { return fP[4]; }       // return Y component of the momentum
+    double Pz() const { return fP[5]; }       // return Z component of the momentum
+    double E() const { return fP[6]; }        // return energy of the particle
+    double S() const { return fP[7]; }        // return dS=l/p, l - decay length, defined if production vertex is set
+    int GetQ() const { return fQ; }           // return charge of the particle
+    double GetChi2() const { return fChi2; }  // return Chi2 of the fit
+    int GetNDF() const { return fNDF; }       // return number of degrees of freedom
+
+    double P2() const { return squaredNorm({fP[3], fP[4], fP[5]}); };
+    double Mass() const {
+        double mass2{E() * E() - P2()};
+        if (mass2 < 0.) return -1.;
+        return std::sqrt(mass2);
+    }
+
+    double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
+    double GetCovariance(int i) const { return fC[i]; }                // return C[i] element of the covariance matrix in the lower triangular form
+    double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
+    SymMatrix<6> Cov_6x6() const { return Slice<36, 21>(fC); }
+
+    std::pair<PCA, PCA> AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    std::pair<PCA, PCA> AddDaughter(const Particle &daughter, double bz) {
+        if (fNDF < -1) {  // first daughter -> just copy
+            fNDF += 2;
+            fQ = daughter.GetQ();
+            for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
+            for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
+            return {{X(), Y(), Z(), Px(), Py(), Pz()},  //
+                    {X(), Y(), Z(), Px(), Py(), Pz()}};
+        }
+        return AddDaughterWithEnergyFit(daughter, bz);
+    }
+    PCA AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
+    void AddMassConstraint(double target_mass);
+
+    void Print() {
+        std::cout << "(X,Y,Z,S)    = " << fP[0] << "    " << fP[1] << "    " << fP[2] << "    " << fP[7] << '\n';
+        std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
+        std::cout << "Mass         = " << Mass() << '\n';
+        std::cout << "Radius       = " << std::sqrt(fP[0] * fP[0] + fP[1] * fP[1]) << '\n';
+        std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
+        std::cout << "CovMatrix    = ";
+        size_t n_in_row{0};
+        size_t max_n_row{1};
+        for (size_t i{0}; i < 8 * 9 / 2; ++i) {
+            std::cout << fC[i];
+            ++n_in_row;
+            if (n_in_row == max_n_row) {
+                std::cout << '\n';
+                if (i + 1 < 8 * 9 / 2) std::cout << "               ";
+                n_in_row = 0;
+                ++max_n_row;
+            } else {
+                std::cout << "    ";
+            }
+        }
+    }
+
+   protected:
+    // Set Cxx=Cyy=Czz=100 and Css=1
+    // Note: it will modify the state of the current `KF::Particle`
+    void Initialize() {
+        fC[0] = 100.;
+        fC[2] = 100.;
+        fC[5] = 100.;
+        fC[35] = 1.;
+    }
+
+    // Set the parameters of the particle:
+    // Input arguments:
+    // - `param`  : position and momentum { X, Y, Z, Px, Py, Pz }
+    // - `cov`    : lower-triangular part of the symmetric 6x6 covariance matrix
+    // - `charge` : charge of the particle in elementary charge units
+    // - `mass`   : the mass hypothesis
+    // Note: it will modify the state of the current `KF::Particle`
+    void Initialize(const Vector<6> &param, const SymMatrix<6> &cov, int charge, double mass) {
+#if KF_DEBUG
+        std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+#endif
+
+        for (int i{0}; i < 6; ++i) fP[i] = param[i];
+        double energy{std::sqrt(mass * mass + fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5])};
+        fP[6] = energy;
+        fP[7] = 0.;
+
+        double h0{fP[3] / energy};
+        double h1{fP[4] / energy};
+        double h2{fP[5] / energy};
+
+        for (int i{0}; i < 21; ++i) fC[i] = cov[i];
+        fC[21] = h0 * fC[6] + h1 * fC[10] + h2 * fC[15];
+        fC[22] = h0 * fC[7] + h1 * fC[11] + h2 * fC[16];
+        fC[23] = h0 * fC[8] + h1 * fC[12] + h2 * fC[17];
+        fC[24] = h0 * fC[9] + h1 * fC[13] + h2 * fC[18];
+        fC[25] = h0 * fC[13] + h1 * fC[14] + h2 * fC[19];
+        fC[26] = h0 * fC[18] + h1 * fC[19] + h2 * fC[20];
+        fC[27] = (h0 * h0 * fC[9] + h1 * h1 * fC[14] + h2 * h2 * fC[20] + 2 * (h0 * h1 * fC[13] + h0 * h2 * fC[18] + h1 * h2 * fC[19]));
+        fC[35] = 1.;
+
+        fQ = charge;
+#if KF_DEBUG
+        PrintSymMatrix<8>(__FUNCTION__, "CovMatrix", fC);
+        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
+    }
 
     Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
@@ -122,87 +229,7 @@ class alignas(32) Particle {
         return TransportBz(min, bz);
     }
 
-    // Accessors
-    Vector<3> XYZ() const { return {fP[0], fP[1], fP[2]}; }                             // PENDING: copies
-    Vector<6> XYZPxPyPz() const { return {fP[0], fP[1], fP[2], fP[3], fP[4], fP[5]}; }  // PENDING: copies
-    double GetX() const { return fP[0]; }                                               // return X coordinate of the particle, fP[0]
-    double GetY() const { return fP[1]; }                                               // return Y coordinate of the particle, fP[1]
-    double GetZ() const { return fP[2]; }                                               // return Z coordinate of the particle, fP[2]
-    double GetPx() const { return fP[3]; }                                              // return X component of the momentum, fP[3]
-    double GetPy() const { return fP[4]; }                                              // return Y component of the momentum, fP[4]
-    double GetPz() const { return fP[5]; }                                              // return Z component of the momentum, fP[5]
-    double GetE() const { return fP[6]; }                                               // return energy of the particle, fP[6]
-    double GetS() const { return fP[7]; }     // return dS=l/p, l - decay length, fP[7], defined if production vertex is set
-    int GetQ() const { return fQ; }           // return charge of the particle
-    double GetChi2() const { return fChi2; }  // return Chi2 of the fit
-    int GetNDF() const { return fNDF; }       // return number of decrease of freedom
-
-    const double &X() const { return fP[0]; }     // return X coordinate of the particle, fP[0]
-    const double &Y() const { return fP[1]; }     // return Y coordinate of the particle, fP[1]
-    const double &Z() const { return fP[2]; }     // return Z coordinate of the particle, fP[2]
-    const double &Px() const { return fP[3]; }    // return X component of the momentum, fP[3]
-    const double &Py() const { return fP[4]; }    // return Y component of the momentum, fP[4]
-    const double &Pz() const { return fP[5]; }    // return Z component of the momentum, fP[5]
-    const double &E() const { return fP[6]; }     // return energy of the particle, fP[6]
-    const double &S() const { return fP[7]; }     // return dS=l/p, l - decay length, fP[7], defined if production vertex is set
-    const int &Q() const { return fQ; }           // return charge of the particle
-    const double &Chi2() const { return fChi2; }  // return Chi2 of the fit
-    const int &NDF() const { return fNDF; }       // return number of decrease of freedom
-
-    double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
-    double GetCovariance(int i) const { return fC[i]; }                // return C[i] element of the covariance matrix in the lower triangular form
-    double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
-    SymMatrix<6> Cov_6x6() const {
-        SymMatrix<6> cov;
-        for (int i{0}; i < (6 * (6 + 1) / 2); ++i) cov[i] = fC[i];
-        return cov;
-    }
-
-    //  MODIFIERS
-    double &X() { return fP[0]; }     // modifier of X coordinate of the particle, fP[0]
-    double &Y() { return fP[1]; }     // modifier of Y coordinate of the particle, fP[1]
-    double &Z() { return fP[2]; }     // modifier of Z coordinate of the particle, fP[2]
-    double &Px() { return fP[3]; }    // modifier of X component of the momentum, fP[3]
-    double &Py() { return fP[4]; }    // modifier of Y component of the momentum, fP[4]
-    double &Pz() { return fP[5]; }    // modifier of Z component of the momentum, fP[5]
-    double &E() { return fP[6]; }     // modifier of energy of the particle, fP[6]
-    double &S() { return fP[7]; }     // modifier of dS=l/p, l - decay length, fP[7], defined if production vertex is set
-    int &Q() { return fQ; }           // modifier of charge of the particle
-    double &Chi2() { return fChi2; }  // modifier of Chi2 of the fit
-    int &NDF() { return fNDF; }       // modifier of number of decrease of freedom
-
-    double &Parameter(int i) { return fP[i]; }                 // modifier of P[i] parameter
-    double &Covariance(int i) { return fC[i]; }                // modifier of C[i] element of the covariance matrix in the lower triangular form
-    double &Covariance(int i, int j) { return fC[IJ(i, j)]; }  // modifier of C[i,j] element of the covariance matrix
-
-    std::pair<PCA, PCA> AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    std::pair<PCA, PCA> AddDaughter(const Particle &daughter, double bz) {
-        if (fNDF < -1) {  // first daughter -> just copy
-            fNDF += 2;
-            fQ = daughter.GetQ();
-            for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
-            for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
-            return {{X(), Y(), Z(), Px(), Py(), Pz()},  //
-                    {X(), Y(), Z(), Px(), Py(), Pz()}};
-        }
-
-        return AddDaughterWithEnergyFit(daughter, bz);
-    }
-
-    PCA AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
-    void AddMassConstraint(double target_mass);
-
-    void Print() {
-        std::cout << "(X,Y,Z)      = " << fP[0] << "    " << fP[1] << "    " << fP[2] << '\n';
-        std::cout << "Radius       = " << std::sqrt(fP[0] * fP[0] + fP[1] * fP[1]) << '\n';
-        std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
-        std::cout << "Mass         = " << std::sqrt(fP[6] * fP[6] - fP[3] * fP[3] - fP[4] * fP[4] - fP[5] * fP[5]) << '\n';
-        std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
-    }
-
-   protected:
-    double &Cij(int i, int j) { return fC[IJ(i, j)]; }
-    SymMatrix<8> fC{};  // low-triangle covariance matrix of fP
+    SymMatrix<8> fC{};  // lower-triangular part of the symmetric 8x8 covariance matrix
     Vector<8> fP{};     // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
     double fChi2{0.};   // chi2
     int fNDF{-3};       // number of degrees of freedom
@@ -211,4 +238,4 @@ class alignas(32) Particle {
 
 }  // namespace KF
 
-#endif
+#endif  // KFPARTICLE_HXX
