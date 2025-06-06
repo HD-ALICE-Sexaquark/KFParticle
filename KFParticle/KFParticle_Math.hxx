@@ -24,15 +24,6 @@ using Matrix = std::array<std::array<double, N>, M>;
 template <size_t N>
 using SymMatrix = std::array<double, N *(N + 1) / 2>;
 
-// Based on https://stackoverflow.com/a/64247207
-template <class S>
-inline std::pair<S, S> sincos(S arg) {
-    return {std::sin(arg), std::cos(arg)};
-}
-
-// Return the dot product of vector `vec` with itself.
-inline double squaredNorm(const Vector<3> &vec) { return vec[0] * vec[0] + vec[1] * vec[1] + vec[2] * vec[2]; }
-
 template <class S>
 static void PrintValue(std::string_view fcn_name, std::string_view name, const S arr) {
     std::cout << "(" << fcn_name << ") " << name << " = " << arr << '\n';
@@ -112,6 +103,28 @@ inline Matrix<N, M> Slice(const Matrix<L, K> &in, size_t begin_i = 0, size_t beg
     return out;
 }
 
+namespace Math {
+
+// Based on https://stackoverflow.com/a/64247207
+template <class S>
+inline std::pair<S, S> sincos(S arg) {
+    return {std::sin(arg), std::cos(arg)};
+}
+
+// Return the dot product of vector `vec` with itself.
+template <size_t N>
+inline double SquaredNorm(const Vector<N> &vec) {
+    double sum{0.};
+    for (size_t i{0}; i < N; ++i) sum += vec[i] * vec[i];
+    return sum;
+}
+
+// Return the norm of vector `vec`. It's equivalent to the square root of the dot product of vector `vec` with itself.
+template <size_t N>
+inline double Norm(const Vector<N> &vec) {
+    return std::sqrt(SquaredNorm(vec));
+}
+
 // Symmetric 3x3 matrix a using modified Cholesky decomposition. The result is stored to the same matrix a.
 // \param[in,out] a - 3x3 symmetric matrix
 inline void InvertCholesky3(SymMatrix<3> &a) {
@@ -180,6 +193,8 @@ static SymMatrix<N> MultQSQt(const Matrix<N, N> &Q, const SymMatrix<N> &S) {
 
     return SOut;
 }
+
+}  // namespace Math
 
 }  // namespace KF
 

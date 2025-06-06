@@ -26,6 +26,7 @@
 #include <cmath>
 #include <iostream>
 #include <utility>
+#include <vector>
 
 #include "KFParticle_Math.hxx"
 
@@ -33,8 +34,8 @@ namespace KF {
 
 struct alignas(32) PCA {
     PCA() = default;
-    PCA(double x, double y, double z, double px, double py, double pz) : pos{x, y, z}, dir{px, py, pz} {};
-    Vector<3> pos{};
+    PCA(double x, double y, double z, double px, double py, double pz) : xyz{x, y, z}, dir{px, py, pz} {};
+    Vector<3> xyz{};
     Vector<3> dir{};
 };
 struct alignas(32) Cache {
@@ -90,23 +91,60 @@ class alignas(32) Particle {
     Particle(const Vector<6> &p, const SymMatrix<6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
     ~Particle() = default;
 
-    double X() const { return fP[0]; }        // return X coordinate of the particle
-    double Y() const { return fP[1]; }        // return Y coordinate of the particle
-    double Z() const { return fP[2]; }        // return Z coordinate of the particle
-    double Px() const { return fP[3]; }       // return X component of the momentum
-    double Py() const { return fP[4]; }       // return Y component of the momentum
-    double Pz() const { return fP[5]; }       // return Z component of the momentum
-    double E() const { return fP[6]; }        // return energy of the particle
-    double S() const { return fP[7]; }        // return dS=l/p, l - decay length, defined if production vertex is set
-    int GetQ() const { return fQ; }           // return charge of the particle
-    double GetChi2() const { return fChi2; }  // return Chi2 of the fit
-    int GetNDF() const { return fNDF; }       // return number of degrees of freedom
+    double X() const { return fP[0]; }     // return X coordinate of the particle
+    double Y() const { return fP[1]; }     // return Y coordinate of the particle
+    double Z() const { return fP[2]; }     // return Z coordinate of the particle
+    double Px() const { return fP[3]; }    // return X component of the momentum
+    double Py() const { return fP[4]; }    // return Y component of the momentum
+    double Pz() const { return fP[5]; }    // return Z component of the momentum
+    double E() const { return fP[6]; }     // return energy of the particle
+    double S() const { return fP[7]; }     // return dS=l/p, l - decay length, defined if production vertex is set
+    int Charge() const { return fQ; }      // return charge of the particle
+    double Chi2() const { return fChi2; }  // return Chi2 of the fit
+    int NDF() const { return fNDF; }       // return number of degrees of freedom
 
-    double P2() const { return squaredNorm({fP[3], fP[4], fP[5]}); };
+    double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); };
+    double P() const { return std::sqrt(P2()); };
+    double Pt() const { return Math::Norm<2>({Px(), Py()}); };
     double Mass() const {
         double mass2{E() * E() - P2()};
-        if (mass2 < 0.) return -1.;
+        if (mass2 < 0.) return -1.;  // protection
         return std::sqrt(mass2);
+    }
+
+    // Pseudorapidity.
+    double Eta() const { return std::atanh(Pz() / P()); };
+
+    // Radius (cm) in cylindrical coordinates.
+    double Rho() const { return Math::Norm<2>({X(), Y()}); };
+
+    // Radius (cm) in spherical coordinates.
+    double Radius() const { return Math::Norm<3>({X(), Y(), Z()}); };
+
+    // Return point of closest approach (PCA) of a certain daughter after minimization.
+    PCA GetPCA(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return {0., 0., 0., 0., 0., 0.};  // protection
+        return fPCAs[index_daughter];
+    }
+
+    // Return distance of closest approach (DCA) (cm) between added daughter and fitted vertex.
+    double GetDCA(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return -1.;  // protection
+        Vector<3> diff{};
+        for (int i{0}; i < 3; ++i) {
+            diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
+        }
+        return Math::Norm<3>(diff);
+    }
+
+    // Return distance of closest approach (DCA) (cm) between added daughter1 and added daughter2.
+    double GetDCA(size_t index_daughter1, size_t index_daughter2) const {
+        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
+        Vector<3> diff{};
+        for (int i{0}; i < 3; ++i) {
+            diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
+        }
+        return Math::Norm<3>(diff);
     }
 
     double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
@@ -114,26 +152,25 @@ class alignas(32) Particle {
     double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
     SymMatrix<6> Cov_6x6() const { return Slice<36, 21>(fC); }
 
-    std::pair<PCA, PCA> AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    std::pair<PCA, PCA> AddDaughter(const Particle &daughter, double bz) {
+    void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    void AddDaughter(const Particle &daughter, double bz) {
         if (fNDF < -1) {  // first daughter -> just copy
             fNDF += 2;
-            fQ = daughter.GetQ();
+            fQ = daughter.Charge();
             for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
             for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
-            return {{X(), Y(), Z(), Px(), Py(), Pz()},  //
-                    {X(), Y(), Z(), Px(), Py(), Pz()}};
+            return;
         }
-        return AddDaughterWithEnergyFit(daughter, bz);
+        AddDaughterWithEnergyFit(daughter, bz);
     }
-    PCA AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
+    void AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
     void AddMassConstraint(double target_mass);
 
     void Print() {
         std::cout << "(X,Y,Z,S)    = " << fP[0] << "    " << fP[1] << "    " << fP[2] << "    " << fP[7] << '\n';
         std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
         std::cout << "Mass         = " << Mass() << '\n';
-        std::cout << "Radius       = " << std::sqrt(fP[0] * fP[0] + fP[1] * fP[1]) << '\n';
+        std::cout << "Radius       = " << Radius() << '\n';
         std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
         std::cout << "CovMatrix    = ";
         size_t n_in_row{0};
@@ -230,10 +267,17 @@ class alignas(32) Particle {
     }
 
     SymMatrix<8> fC{};  // lower-triangular part of the symmetric 8x8 covariance matrix
-    Vector<8> fP{};     // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
-    double fChi2{0.};   // chi2
-    int fNDF{-3};       // number of degrees of freedom
-    int fQ{0};          // the charge of the particle in units of elementary charge
+
+    // Registered points of closest approach (PCAs).
+    // 0) If there's no or a single daughter has been added <-> no fitted vertex => size = 0
+    // 1) After a second daughter has been added <-> there is a fitted vertex => size = 2
+    // 2) After that, for any additional daughter or production vertex => size += 1
+    std::vector<PCA> fPCAs;
+
+    Vector<8> fP{};    // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
+    double fChi2{0.};  // chi2
+    int fNDF{-3};      // number of degrees of freedom
+    int fQ{0};         // charge of the particle in units of elementary charge
 };
 
 }  // namespace KF

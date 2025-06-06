@@ -58,8 +58,8 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
         PrintMatrix<6, 6>(__FUNCTION__, "F3", tpr2.corr);
         PrintMatrix<6, 6>(__FUNCTION__, "F4", tpr2.jacob);
 #endif
-        SymMatrix<6> V0Tmp{MultQSQt<6>(tpr1.corr, daughter.Cov_6x6())};
-        SymMatrix<6> V1Tmp{MultQSQt<6>(tpr2.corr, Cov_6x6())};
+        SymMatrix<6> V0Tmp{Math::MultQSQt<6>(tpr1.corr, daughter.Cov_6x6())};
+        SymMatrix<6> V1Tmp{Math::MultQSQt<6>(tpr2.corr, Cov_6x6())};
 #if KF_DEBUG
         PrintSymMatrix<6>(__FUNCTION__, "V0Tmp", V0Tmp);
         PrintSymMatrix<6>(__FUNCTION__, "V1Tmp", V1Tmp);
@@ -183,21 +183,20 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 // - `daughter`       : the daughter `KF::Particle` to be added
 // - `bz`             : z-component of magnetic field
 // - `chi2_threshold` : do an early cut of chi2
-// Return: (packed as two `KF::PCA` structs)
-// - PCA coordinates
-// - 3-momentum at PCA
 // Note: it will modify the state of the current `KF::Particle`
-std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
+void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
     auto meas = GetMeasurement(daughter, bz);
+    fPCAs.emplace_back(meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]);
+    fPCAs.emplace_back(meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]);
 
     SymMatrix<3> mS{meas.C1[0] + meas.C2[0],                           //
                     meas.C1[1] + meas.C2[1], meas.C1[2] + meas.C2[2],  //
                     meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
-    InvertCholesky3(mS);
+    Math::InvertCholesky3(mS);
 #if KF_DEBUG
     PrintVector<8>(__FUNCTION__, "meas.P1", meas.P1);
     PrintSymMatrix<8>(__FUNCTION__, "meas.C1", meas.C1);
@@ -214,10 +213,7 @@ std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter,
     PrintVector<3>(__FUNCTION__, "zeta", zeta);
     PrintValue(__FUNCTION__, "dChi2", dChi2);
 #endif
-    if (dChi2 > chi2_threshold) {
-        return {{meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]},
-                {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
-    }
+    if (dChi2 > chi2_threshold) return;
 
     // update current particle state //
 
@@ -331,14 +327,11 @@ std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter,
     // update rest of properties //
 
     fNDF += 2;
-    fQ += daughter.GetQ();
+    fQ += daughter.Charge();
     fChi2 += dChi2;
 #if KF_DEBUG
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
-
-    return {{meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]},
-            {meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]}};
 }
 
 // Set a topological constraint on the current particle.
@@ -347,12 +340,9 @@ std::pair<PCA, PCA> Particle::AddDaughterWithEnergyFit(const Particle& daughter,
 // - `prod_cov`       : production vertex's covariance matrix
 // - `bz`             : z-component of magnetic field
 // - `chi2_threshold` : do an early cut in chi2
-// Return: (packed in a single `KF::PCA` struct)
-// - point of closest approach (PCA) coordinates
-// - 3-momentum at PCA
 // Note: it will modify the state of the current `KF::Particle`
 // Note: should be executed as final step, after the particle has been added all of its daughters!
-PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>& prod_cov, double bz, double chi2_threshold) {
+void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>& prod_cov, double bz, double chi2_threshold) {
 #if KF_DEBUG
     std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
 #endif
@@ -365,9 +355,11 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     // transport to production vertex //
 
     auto min = Minimize(prod_vtx, bz);
+    fPCAs.emplace_back(min.pca);
+
     auto tpr = Transport(min, bz);
 
-    SymMatrix<3> CTmp{MultQSQt(Slice<6, 6, 3, 3>(tpr.corr), prod_cov)};
+    SymMatrix<3> CTmp{Math::MultQSQt(Slice<6, 6, 3, 3>(tpr.corr), prod_cov)};
 
     SymMatrix<3> measC{};
     for (int iC{0}; iC < 6; ++iC) measC[iC] = tpr.C[iC] + CTmp[iC];
@@ -384,7 +376,7 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     SymMatrix<3> mS{measC[0] + prod_cov[0],                          //
                     measC[1] + prod_cov[1], measC[2] + prod_cov[2],  //
                     measC[3] + prod_cov[3], measC[4] + prod_cov[4], measC[5] + prod_cov[5]};
-    InvertCholesky3(mS);
+    Math::InvertCholesky3(mS);
 #if KF_DEBUG
     PrintSymMatrix<3>(__FUNCTION__, "CTmp", CTmp);
     PrintSymMatrix<3>(__FUNCTION__, "measC", measC);
@@ -399,7 +391,7 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     PrintVector<3>(__FUNCTION__, "res", res);
     PrintValue(__FUNCTION__, "dChi2", dChi2);
 #endif
-    if (dChi2 > chi2_threshold) return min.pca;
+    if (dChi2 > chi2_threshold) return;
 
     // update current particle state //
 
@@ -513,7 +505,6 @@ PCA Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>&
     PrintSymMatrix<8>(__FUNCTION__, "fC (the end)", fC);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
-    return min2decay.pca;
 }
 
 // Set a mass constraint on the current particle.
@@ -603,9 +594,9 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     min.ds_dr1[1] = -min.ds_dr[1];
     min.ds_dr1[2] = -min.ds_dr[2];
 
-    min.pca.pos[0] = x0 + px0 * min.ds;
-    min.pca.pos[1] = y0 + py0 * min.ds;
-    min.pca.pos[2] = z0 + pz0 * min.ds;
+    min.pca.xyz[0] = x0 + px0 * min.ds;
+    min.pca.xyz[1] = y0 + py0 * min.ds;
+    min.pca.xyz[2] = z0 + pz0 * min.ds;
 
     min.pca.dir[0] = px0;
     min.pca.dir[1] = py0;
@@ -614,7 +605,7 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     PrintValue(__FUNCTION__, "min.ds", min.ds);
     PrintVector<6>(__FUNCTION__, "min.ds_dr", min.ds_dr);
     PrintVector<6>(__FUNCTION__, "min.ds_dr1", min.ds_dr1);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z)", min.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z)", min.pca.xyz);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
     return min;
@@ -659,22 +650,22 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     // 1.a -- get solution and update cache properties //
 
     min.theta = std::atan2(abq, -bbq);
-    std::tie(min.sin, min.cos) = sincos(min.theta);
+    std::tie(min.sin, min.cos) = Math::sincos(min.theta);
     min.sB = min.sin / bq;
     min.cB = (1. - min.cos) / bq;
 
     min.ds = min.theta / bq;
 
-    min.pca.pos[0] = x0 + min.sB * px0 + min.cB * py0;
-    min.pca.pos[1] = y0 - min.cB * px0 + min.sB * py0;
-    min.pca.pos[2] = z0 + min.ds * pz0;
+    min.pca.xyz[0] = x0 + min.sB * px0 + min.cB * py0;
+    min.pca.xyz[1] = y0 - min.cB * px0 + min.sB * py0;
+    min.pca.xyz[2] = z0 + min.ds * pz0;
 
     min.pca.dir[0] = min.cos * px0 + min.sin * py0;
     min.pca.dir[1] = -min.sin * px0 + min.cos * py0;
     min.pca.dir[2] = pz0;
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min.ds (no z-correction)", min.ds);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.xyz);
     // PrintValue(__FUNCTION__, "dx", dx); // PENDING
     // PrintValue(__FUNCTION__, "dy", dy); // PENDING
     // PrintValue(__FUNCTION__, "dz", dz); // PENDING
@@ -739,13 +730,13 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     // 2.c -- update rest of cache properties //
 
     min.theta = bq * min.ds;
-    std::tie(min.sin, min.cos) = sincos(min.theta);
+    std::tie(min.sin, min.cos) = Math::sincos(min.theta);
     min.sB = min.sin / bq;
     min.cB = (1. - min.cos) / bq;
 
-    min.pca.pos[0] = x0 + min.sB * px0 + min.cB * py0;
-    min.pca.pos[1] = y0 - min.cB * px0 + min.sB * py0;
-    min.pca.pos[2] = z0 + min.ds * pz0;
+    min.pca.xyz[0] = x0 + min.sB * px0 + min.cB * py0;
+    min.pca.xyz[1] = y0 - min.cB * px0 + min.sB * py0;
+    min.pca.xyz[2] = z0 + min.ds * pz0;
 
     min.pca.dir[0] = min.cos * px0 + min.sin * py0;
     min.pca.dir[1] = -min.sin * px0 + min.cos * py0;
@@ -775,7 +766,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     dS += std::atan2(abq, p2 + bq * (dy * p[3] - dx * p[4])) / bq;
     */
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca.xyz);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
@@ -858,22 +849,22 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         Cache tmp1;
         if (!isStraight1) {
             tmp1.theta = std::atan2(bq1 * (k11 * c1 + sign * k21 * d1), sign * bq1 * k11 * d1 * bq1 - k21 * c1);
-            std::tie(tmp1.sin, tmp1.cos) = sincos(tmp1.theta);
+            std::tie(tmp1.sin, tmp1.cos) = Math::sincos(tmp1.theta);
             tmp1.sB = tmp1.sin / bq1;
             tmp1.cB = (1. - tmp1.cos) / bq1;
             tmp1.ds = tmp1.theta / bq1;
 
-            tmp1.pca.pos[0] = x01 + tmp1.sB * px01 + tmp1.cB * py01;
-            tmp1.pca.pos[1] = y01 - tmp1.cB * px01 + tmp1.sB * py01;
-            tmp1.pca.pos[2] = z01 + tmp1.ds * pz01;
+            tmp1.pca.xyz[0] = x01 + tmp1.sB * px01 + tmp1.cB * py01;
+            tmp1.pca.xyz[1] = y01 - tmp1.cB * px01 + tmp1.sB * py01;
+            tmp1.pca.xyz[2] = z01 + tmp1.ds * pz01;
             tmp1.pca.dir[0] = tmp1.cos * px01 + tmp1.sin * py01;
             tmp1.pca.dir[1] = -tmp1.sin * px01 + tmp1.cos * py01;
             tmp1.pca.dir[2] = pz01;
         } else {
             tmp1.ds = (k11 * c1 + sign * k21 * d1) / (-k21 * c1);
-            tmp1.pca.pos[0] = x01 + px01 * tmp1.ds;
-            tmp1.pca.pos[1] = y01 + py01 * tmp1.ds;
-            tmp1.pca.pos[2] = z01 + pz01 * tmp1.ds;
+            tmp1.pca.xyz[0] = x01 + px01 * tmp1.ds;
+            tmp1.pca.xyz[1] = y01 + py01 * tmp1.ds;
+            tmp1.pca.xyz[2] = z01 + pz01 * tmp1.ds;
             tmp1.pca.dir[0] = px01;
             tmp1.pca.dir[1] = py01;
             tmp1.pca.dir[2] = pz01;
@@ -883,30 +874,30 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         Cache tmp2;
         if (!isStraight2) {
             tmp2.theta = std::atan2(bq2 * (k12 * c2 + sign * k22 * d1), sign * bq2 * k12 * d1 * bq2 - k22 * c2);
-            std::tie(tmp2.sin, tmp2.cos) = sincos(tmp2.theta);
+            std::tie(tmp2.sin, tmp2.cos) = Math::sincos(tmp2.theta);
             tmp2.sB = tmp2.sin / bq2;
             tmp2.cB = (1. - tmp2.cos) / bq2;
             tmp2.ds = tmp2.theta / bq2;
 
-            tmp2.pca.pos[0] = x02 + tmp2.sB * px02 + tmp2.cB * py02;
-            tmp2.pca.pos[1] = y02 - tmp2.cB * px02 + tmp2.sB * py02;
-            tmp2.pca.pos[2] = z02 + tmp2.ds * pz02;
+            tmp2.pca.xyz[0] = x02 + tmp2.sB * px02 + tmp2.cB * py02;
+            tmp2.pca.xyz[1] = y02 - tmp2.cB * px02 + tmp2.sB * py02;
+            tmp2.pca.xyz[2] = z02 + tmp2.ds * pz02;
             tmp2.pca.dir[0] = tmp2.cos * px02 + tmp2.sin * py02;
             tmp2.pca.dir[1] = -tmp2.sin * px02 + tmp2.cos * py02;
             tmp2.pca.dir[2] = pz02;
         } else {
             tmp2.ds = (k12 * c2 + sign * k22 * d1) / (-k22 * c2);
-            tmp2.pca.pos[0] = x02 + px02 * tmp2.ds;
-            tmp2.pca.pos[1] = y02 + py02 * tmp2.ds;
-            tmp2.pca.pos[2] = z02 + pz02 * tmp2.ds;
+            tmp2.pca.xyz[0] = x02 + px02 * tmp2.ds;
+            tmp2.pca.xyz[1] = y02 + py02 * tmp2.ds;
+            tmp2.pca.xyz[2] = z02 + pz02 * tmp2.ds;
             tmp2.pca.dir[0] = px02;
             tmp2.pca.dir[1] = py02;
             tmp2.pca.dir[2] = pz02;
         }
 
-        Vector<3> tmp_diff{tmp2.pca.pos};
-        for (int i{0}; i < 3; ++i) tmp_diff[i] -= tmp1.pca.pos[i];
-        double tmp_dca_sq{squaredNorm(tmp_diff)};
+        Vector<3> tmp_diff{tmp2.pca.xyz};
+        for (int i{0}; i < 3; ++i) tmp_diff[i] -= tmp1.pca.xyz[i];
+        double tmp_dca_sq{Math::SquaredNorm(tmp_diff)};
 
         // store //
         if (tmp_dca_sq < dca_sq) {
@@ -923,9 +914,9 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     }
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min1.ds (no z-correction)", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
     PrintValue(__FUNCTION__, "min2.ds (no z-correction)", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
     PrintValue(__FUNCTION__, "dx", dx);
     PrintValue(__FUNCTION__, "dy", dy);
     PrintValue(__FUNCTION__, "dz", dz);
@@ -1213,31 +1204,31 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     // 2.c -- update rest of cache properties //
 
     min1.theta = bq1 * min1.ds;
-    std::tie(min1.sin, min1.cos) = sincos(min1.theta);
+    std::tie(min1.sin, min1.cos) = Math::sincos(min1.theta);
     min1.sB = min1.sin / bq1;
     min1.cB = (1. - min1.cos) / bq1;
 
-    min1.pca.pos[0] = x01 + min1.sB * px01 + min1.cB * py01;
-    min1.pca.pos[1] = y01 - min1.cB * px01 + min1.sB * py01;
-    min1.pca.pos[2] = z01 + min1.ds * pz01;
+    min1.pca.xyz[0] = x01 + min1.sB * px01 + min1.cB * py01;
+    min1.pca.xyz[1] = y01 - min1.cB * px01 + min1.sB * py01;
+    min1.pca.xyz[2] = z01 + min1.ds * pz01;
     min1.pca.dir[0] = min1.cos * px01 + min1.sin * py01;
     min1.pca.dir[1] = -min1.sin * px01 + min1.cos * py01;
     min1.pca.dir[2] = pz01;
 
     min2.theta = bq2 * min2.ds;
-    std::tie(min2.sin, min2.cos) = sincos(min2.theta);
+    std::tie(min2.sin, min2.cos) = Math::sincos(min2.theta);
     min2.sB = min2.sin / bq2;
     min2.cB = (1. - min2.cos) / bq2;
 
-    min2.pca.pos[0] = x02 + min2.sB * px02 + min2.cB * py02;
-    min2.pca.pos[1] = y02 - min2.cB * px02 + min2.sB * py02;
-    min2.pca.pos[2] = z02 + min2.ds * pz02;
+    min2.pca.xyz[0] = x02 + min2.sB * px02 + min2.cB * py02;
+    min2.pca.xyz[1] = y02 - min2.cB * px02 + min2.sB * py02;
+    min2.pca.xyz[2] = z02 + min2.ds * pz02;
     min2.pca.dir[0] = min2.cos * px02 + min2.sin * py02;
     min2.pca.dir[1] = -min2.sin * px02 + min2.cos * py02;
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca.pos);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca.xyz);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca.xyz);
     std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
@@ -1285,24 +1276,24 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     if (std::abs(detp) < Const::AbsAlmostZero) return {MinimizeLinePoint({0., 0., 0.}), MinimizeLinePoint({0., 0., 0.})};  // protection
 
     min1.ds = (drp2 * p1p2 - drp1 * p22) / detp;
-    min1.pca.pos[0] = x01 + px01 * min1.ds;
-    min1.pca.pos[1] = y01 + py01 * min1.ds;
-    min1.pca.pos[2] = z01 + pz01 * min1.ds;
+    min1.pca.xyz[0] = x01 + px01 * min1.ds;
+    min1.pca.xyz[1] = y01 + py01 * min1.ds;
+    min1.pca.xyz[2] = z01 + pz01 * min1.ds;
     min1.pca.dir[0] = px01;
     min1.pca.dir[1] = py01;
     min1.pca.dir[2] = pz01;
     min2.ds = (drp2 * p12 - drp1 * p1p2) / detp;
-    min2.pca.pos[0] = x02 + px02 * min2.ds;
-    min2.pca.pos[1] = y02 + py02 * min2.ds;
-    min2.pca.pos[2] = z02 + pz02 * min2.ds;
+    min2.pca.xyz[0] = x02 + px02 * min2.ds;
+    min2.pca.xyz[1] = y02 + py02 * min2.ds;
+    min2.pca.xyz[2] = z02 + pz02 * min2.ds;
     min2.pca.dir[0] = px02;
     min2.pca.dir[1] = py02;
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
     PrintValue(__FUNCTION__, "min1.ds", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
     PrintValue(__FUNCTION__, "min2.ds", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.pos);
+    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
 #endif
 
     // handle derivatives //
@@ -1406,7 +1397,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
         }
     }
 
-    tpr.C = MultQSQt<8>(mJ, fC);
+    tpr.C = Math::MultQSQt<8>(mJ, fC);
 
     for (int i{0}; i < 6; ++i) {
         for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
@@ -1481,7 +1472,7 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
             mJ[i1][i2] += mJds[i1][3] * px * min.ds_dr[i2] + mJds[i1][4] * py * min.ds_dr[i2] + mJds[i1][5] * pz * min.ds_dr[i2];
         }
     }
-    tpr.C = MultQSQt<8>(mJ, fC);
+    tpr.C = Math::MultQSQt<8>(mJ, fC);
 
     for (int i{0}; i < 6; ++i) {
         for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
