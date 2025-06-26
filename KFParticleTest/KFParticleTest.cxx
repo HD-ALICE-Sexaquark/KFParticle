@@ -13,7 +13,7 @@ int main() {
     KF::Vector<3> vv0{0., 0., 10.};
     KF::SymMatrix<3> cc0{0.01, 0., 0.01, 0., 0., 0.01};
 
-    // Particle 1 //
+    // Charged Particle 1 //
 
     // clang-format off
     KF::Vector<6> pp1{-0.061996019110347252, -1.3579236865955473,   27.147283554077148,
@@ -27,7 +27,7 @@ int main() {
     // clang-format on
     KF::Particle p1{pp1, cc1, -1, pion_mass};
 
-    // Particle 2 //
+    // Charged Particle 2 //
 
     // clang-format off
     KF::Vector<6> pp2{-0.20371287092090862, 3.0678058943547839,   -19.93988037109375,

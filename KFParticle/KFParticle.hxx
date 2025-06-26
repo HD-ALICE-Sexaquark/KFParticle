@@ -89,6 +89,7 @@ class alignas(32) Particle {
 
     Particle() { Initialize(); }
     Particle(const Vector<6> &p, const SymMatrix<6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
+    Particle(const Vector<7> &p, const SymMatrix<7> &cov, int charge) { Initialize(p, cov, charge); }
     ~Particle() = default;
 
     double X() const { return fP[0]; }     // return X coordinate of the particle
@@ -115,11 +116,14 @@ class alignas(32) Particle {
     // Pseudorapidity.
     double Eta() const { return std::atanh(Pz() / P()); };
 
+    // Rapidity.
+    double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz())) / 2.; };
+
     // Radius (cm) in cylindrical coordinates.
-    double Rho() const { return Math::Norm<2>({X(), Y()}); };
+    double Radius2D() const { return Math::Norm<2>({X(), Y()}); };
 
     // Radius (cm) in spherical coordinates.
-    double Radius() const { return Math::Norm<3>({X(), Y(), Z()}); };
+    double Radius3D() const { return Math::Norm<3>({X(), Y(), Z()}); };
 
     // Return point of closest approach (PCA) of a certain daughter after minimization.
     PCA GetPCA(size_t index_daughter) const {
@@ -147,6 +151,26 @@ class alignas(32) Particle {
         return Math::Norm<3>(diff);
     }
 
+    // Return distance of closest approach (DCA) (cm) in XY plane between added daughter and fitted vertex.
+    double GetDCAxy(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return -1.;  // protection
+        Vector<2> diff{};
+        for (int i{0}; i < 2; ++i) {
+            diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
+        }
+        return Math::Norm<2>(diff);
+    }
+
+    // Return distance of closest approach (DCA) (cm) in XY plane between added daughter1 and added daughter2.
+    double GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
+        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
+        Vector<2> diff{};
+        for (int i{0}; i < 2; ++i) {
+            diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
+        }
+        return Math::Norm<2>(diff);
+    }
+
     double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
     double GetCovariance(int i) const { return fC[i]; }                // return C[i] element of the covariance matrix in the lower triangular form
     double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
@@ -170,7 +194,7 @@ class alignas(32) Particle {
         std::cout << "(X,Y,Z,S)    = " << fP[0] << "    " << fP[1] << "    " << fP[2] << "    " << fP[7] << '\n';
         std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
         std::cout << "Mass         = " << Mass() << '\n';
-        std::cout << "Radius       = " << Radius() << '\n';
+        std::cout << "Radius2D     = " << Radius2D() << '\n';
         std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
         std::cout << "CovMatrix    = ";
         size_t n_in_row{0};
@@ -187,6 +211,9 @@ class alignas(32) Particle {
                 std::cout << "    ";
             }
         }
+        std::cout << "DCAxy_Dau      = " << GetDCAxy(0, 1) << '\n';
+        std::cout << "DCAxy_Neg      = " << GetDCAxy(0) << '\n';
+        std::cout << "DCAxy_Pos      = " << GetDCAxy(1) << '\n';
     }
 
    protected:
@@ -233,6 +260,26 @@ class alignas(32) Particle {
         fQ = charge;
 #if KF_DEBUG
         PrintSymMatrix<8>(__FUNCTION__, "CovMatrix", fC);
+        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+#endif
+    }
+
+    // Set the parameters of the particle:
+    // Input arguments:
+    // - `param`  : position, momentum and energy { X, Y, Z, Px, Py, Pz, E }
+    // - `cov`    : lower-triangular part of the symmetric 7x7 covariance matrix
+    // - `charge` : charge of the particle in elementary charge units
+    // Note: it will modify the state of the current `KF::Particle`
+    void Initialize(const Vector<7> &param, const SymMatrix<7> &cov, int charge) {
+#if KF_DEBUG
+        std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+#endif
+        for (int i{0}; i < 7; ++i) fP[i] = param[i];
+        fP[7] = 0.;
+        for (int i{0}; i < 28; ++i) fC[i] = cov[i];
+        fC[35] = 1.;
+        fQ = charge;
+#if KF_DEBUG
         std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
 #endif
     }
