@@ -67,42 +67,39 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 
         Result::Measurement meas{tpr1.C, tpr2.C, Matrix<3, 3>{}, tpr1.P, tpr2.P};
 
-        for (int iC{0}; iC < 21; ++iC) {
+        for (size_t iC{0}; iC < 21; ++iC) {
             meas.C1[iC] += V0Tmp[iC];
             meas.C2[iC] += V1Tmp[iC];
         }
 
-        Matrix<6, 6> C1F1T;
-        for (int i{0}; i < 6; ++i) {
-            for (int j{0}; j < 6; ++j) {
-                C1F1T[i][j] = 0.;
-                for (int k{0}; k < 6; ++k) {
+        Matrix<6, 6> C1F1T{};
+        for (size_t i{0}; i < 6; ++i) {
+            for (size_t j{0}; j < 6; ++j) {
+                for (size_t k{0}; k < 6; ++k) {
                     C1F1T[i][j] += fC[IJ(i, k)] * tpr1.jacob[j][k];
                 }
             }
         }
-        Matrix<6, 6> F3C1F1T;
-        for (int i{0}; i < 6; ++i) {
-            for (int j{0}; j < 6; ++j) {
-                F3C1F1T[i][j] = 0.;
-                for (int k{0}; k < 6; ++k) {
+        Matrix<6, 6> F3C1F1T{};
+        for (size_t i{0}; i < 6; ++i) {
+            for (size_t j{0}; j < 6; ++j) {
+                for (size_t k{0}; k < 6; ++k) {
                     F3C1F1T[i][j] += tpr2.corr[i][k] * C1F1T[k][j];
                 }
             }
         }
-        Matrix<6, 6> C2F2T;
-        for (int i{0}; i < 6; ++i) {
-            for (int j{0}; j < 6; ++j) {
-                C2F2T[i][j] = 0.;
-                for (int k{0}; k < 6; ++k) {
+        Matrix<6, 6> C2F2T{};
+        for (size_t i{0}; i < 6; ++i) {
+            for (size_t j{0}; j < 6; ++j) {
+                for (size_t k{0}; k < 6; ++k) {
                     C2F2T[i][j] += daughter.fC[IJ(i, k)] * tpr1.corr[j][k];
                 }
             }
         }
-        for (int i{0}; i < 3; ++i) {
-            for (int j{0}; j < 3; ++j) {
+        for (size_t i{0}; i < 3; ++i) {
+            for (size_t j{0}; j < 3; ++j) {
                 meas.D[i][j] = F3C1F1T[i][j];
-                for (int k{0}; k < 6; ++k) {
+                for (size_t k{0}; k < 6; ++k) {
                     meas.D[i][j] += tpr2.jacob[i][k] * C2F2T[k][j];
                 }
             }
@@ -129,26 +126,26 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
     Result::Measurement meas{fC, tpr2.C, Matrix<3, 3>{}, fP, tpr2.P};
 
     Matrix<3, 6> VFT{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 6; ++j) {
-            for (int k{0}; k < 3; ++k) {
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 6; ++j) {
+            for (size_t k{0}; k < 3; ++k) {
                 VFT[i][j] += fC[IJ(i, k)] * tpr2.jacob[j][k];
             }
         }
     }
 
     Matrix<6, 6> FVFT{};
-    for (int i{0}; i < 6; ++i) {
-        for (int j{0}; j < 6; ++j) {
-            for (int k{0}; k < 3; ++k) {
+    for (size_t i{0}; i < 6; ++i) {
+        for (size_t j{0}; j < 6; ++j) {
+            for (size_t k{0}; k < 3; ++k) {
                 FVFT[i][j] += tpr2.jacob[i][k] * VFT[k][j];
             }
         }
     }
 
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) {
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) {
                 meas.D[i][j] += fC[IJ(j, k)] * tpr2.jacob[i][k];
             }
         }
@@ -217,8 +214,8 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 
     // update current particle state //
 
-    for (int i{0}; i < 8; ++i) fP[i] = meas.P1[i];
-    for (int i{0}; i < 28; ++i) fC[i] = meas.C1[i];
+    for (size_t i{0}; i < 8; ++i) fP[i] = meas.P1[i];
+    for (size_t i{0}; i < 28; ++i) fC[i] = meas.C1[i];
 
     // add daughter's momentum to particle momentum //
 
@@ -258,55 +255,52 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     Vector<7> k0;
     Vector<7> k1;
     Vector<7> k2;
-    for (int i{0}; i < 7; ++i) {
+    for (size_t i{0}; i < 7; ++i) {
         k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
         k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
         k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
     }
 
-    for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
+    for (size_t i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
 
-    for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) {
+    for (size_t i{0}, k{0}; i < 7; ++i) {
+        for (size_t j{0}; j <= i; ++j, ++k) {
             fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
         }
     }
 #if KF_DEBUG
-    PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    PrintSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
-    PrintVector<8>(__FUNCTION__, "fP (after Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (after Kalman gain)", fC);
+    Prsize_tSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
+    Prsize_tSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
+    Prsize_tVector<8>(__FUNCTION__, "fP (after Kalman gain)", fP);
+    Prsize_tSymMatrix<8>(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
     // do something else? //
 
-    Matrix<3, 3> K;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            K[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
+    Matrix<3, 3> K{};
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
         }
     }
 
     Matrix<3, 3> K2;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
         K2[i][i] += 1.;
     }
 
-    Matrix<3, 3> A;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            A[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
+    Matrix<3, 3> A{};
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
         }
     }
 
-    Matrix<3, 3> M;
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            M[i][j] = 0.;
-            for (int k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
+    Matrix<3, 3> M{};
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
         }
     }
 
@@ -362,12 +356,12 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
     SymMatrix<3> CTmp{Math::MultQSQt(Slice<6, 6, 3, 3>(tpr.corr), prod_cov)};
 
     SymMatrix<3> measC{};
-    for (int iC{0}; iC < 6; ++iC) measC[iC] = tpr.C[iC] + CTmp[iC];
+    for (size_t iC{0}; iC < 6; ++iC) measC[iC] = tpr.C[iC] + CTmp[iC];
 
     Matrix<3, 3> D{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) {
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) {
                 D[i][j] += prod_cov[IJ(j, k)] * tpr.corr[i][k];
             }
         }
@@ -395,9 +389,9 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 
     // update current particle state //
 
-    for (int i{0}; i < 8; ++i) fP[i] = tpr.P[i];
-    for (int i{0}; i < 6; ++i) fC[i] = measC[i];
-    for (int i{6}; i < 28; ++i) fC[i] = tpr.C[i];
+    for (size_t i{0}; i < 8; ++i) fP[i] = tpr.P[i];
+    for (size_t i{0}; i < 6; ++i) fC[i] = measC[i];
+    for (size_t i{6}; i < 28; ++i) fC[i] = tpr.C[i];
 
 #if KF_DEBUG
     PrintVector<8>(__FUNCTION__, "fP (before Kalman gain)", fP);
@@ -413,16 +407,16 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
     Vector<7> k0;
     Vector<7> k1;
     Vector<7> k2;
-    for (int i{0}; i < 7; ++i) {
+    for (size_t i{0}; i < 7; ++i) {
         k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
         k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
         k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
     }
 
-    for (int i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * res[0] + k1[i] * res[1] + k2[i] * res[2];
+    for (size_t i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * res[0] + k1[i] * res[1] + k2[i] * res[2];
 
-    for (int i{0}, k{0}; i < 7; ++i) {
-        for (int j{0}; j <= i; ++j, ++k) {
+    for (size_t i{0}, k{0}; i < 7; ++i) {
+        for (size_t j{0}; j <= i; ++j, ++k) {
             fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
         }
     }
@@ -434,29 +428,29 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 #endif
 
     Matrix<3, 3> K{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) K[i][j] += measC[IJ(i, k)] * mS[IJ(k, j)];
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) K[i][j] += measC[IJ(i, k)] * mS[IJ(k, j)];
         }
     }
 
     Matrix<3, 3> K2{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
         K2[i][i] += 1.;
     }
 
     Matrix<3, 3> A{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) A[i][j] += D[k][i] * K2[k][j];
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) A[i][j] += D[k][i] * K2[k][j];
         }
     }
 
     Matrix<3, 3> M{};
-    for (int i{0}; i < 3; ++i) {
-        for (int j{0}; j < 3; ++j) {
-            for (int k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
+    for (size_t i{0}; i < 3; ++i) {
+        for (size_t j{0}; j < 3; ++j) {
+            for (size_t k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
         }
     }
 
@@ -485,16 +479,16 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
     fP[7] = min2decay.ds;
     fC[35] = 0.;
 
-    for (int iDsDr{0}; iDsDr < 6; ++iDsDr) {
+    for (size_t iDsDr{0}; iDsDr < 6; ++iDsDr) {
         double dsdrC{0.};
         double dsdpV{0.};
 
-        for (int k{0}; k < 6; ++k) dsdrC += min2decay.ds_dr[k] * fC[IJ(k, iDsDr)];
+        for (size_t k{0}; k < 6; ++k) dsdrC += min2decay.ds_dr[k] * fC[IJ(k, iDsDr)];
 
         fC[iDsDr + 28] = dsdrC;
         fC[35] += dsdrC * min2decay.ds_dr[iDsDr];
         if (iDsDr < 3) {
-            for (int k{0}; k < 3; ++k) dsdpV -= min2decay.ds_dr[k] * decay_cov[IJ(k, iDsDr)];
+            for (size_t k{0}; k < 3; ++k) dsdpV -= min2decay.ds_dr[k] * decay_cov[IJ(k, iDsDr)];
             fC[35] -= dsdpV * min2decay.ds_dr[iDsDr];
         }
     }
@@ -528,21 +522,21 @@ void Particle::AddMassConstraint(double target_mass) {
 
     double s2{0.};
     Vector<8> mCHt{};
-    for (int i{0}; i < 8; ++i) {
-        for (int j{0}; j < 8; ++j) mCHt[i] += fC[IJ(i, j)] * mH[j];
+    for (size_t i{0}; i < 8; ++i) {
+        for (size_t j{0}; j < 8; ++j) mCHt[i] += fC[IJ(i, j)] * mH[j];
         s2 += mH[i] * mCHt[i];
     }
 
     if (std::abs(s2) < Const::AbsAlmostZero) return;  // protection
 
     // apply Kalman filter update //
-    for (int i{0}, ii{0}; i < 8; ++i) {
+    for (size_t i{0}, ii{0}; i < 8; ++i) {
         // i-th component of Kalman gain vector //
         double ki{mCHt[i] / s2};
         // update state //
         fP[i] += ki * zeta;
         // update cov matrix //
-        for (int j{0}; j <= i; ++j, ++ii) fC[ii] -= ki * mCHt[j];
+        for (size_t j{0}; j <= i; ++j, ++ii) fC[ii] -= ki * mCHt[j];
     }
 
     fChi2 += zeta * zeta / s2;
@@ -708,7 +702,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
                     (bq * dx - 2. * py0) * min.cos - bbq * min.sin * bq * min.ds_dr[4] - dy * bq * min.sin - abq * min.cos * bq * min.ds_dr[4],
                     -2. * pz0};
 
-    for (int iP{0}; iP < 6; ++iP) min.ds_dr[iP] += pz0 * pz0 * min.ds_dr[iP] / cbq - sz / cbq * dc_dr[iP];
+    for (size_t iP{0}; iP < 6; ++iP) min.ds_dr[iP] += pz0 * pz0 * min.ds_dr[iP] / cbq - sz / cbq * dc_dr[iP];
     min.ds_dr[2] += pz0 / cbq;
     min.ds_dr[5] += (2. * pz0 * min.ds - dz) / cbq;
 
@@ -896,7 +890,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         }
 
         Vector<3> tmp_diff{tmp2.pca.xyz};
-        for (int i{0}; i < 3; ++i) tmp_diff[i] -= tmp1.pca.xyz[i];
+        for (size_t i{0}; i < 3; ++i) tmp_diff[i] -= tmp1.pca.xyz[i];
         double tmp_dca_sq{Math::SquaredNorm(tmp_diff)};
 
         // store //
@@ -961,7 +955,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Vector<6> dd1dr1{};
     Vector<6> dd1dr2{};
     if (d1 > 0.) {
-        for (int i{0}; i < 6; ++i) {
+        for (size_t i{0}; i < 6; ++i) {
             dd1dr1[i] = -kd * dkddr1[i] / d1;
             dd1dr2[i] = -kd * dkddr2[i] / d1;
         }
@@ -995,7 +989,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         double c{b * b + a * a};
         double d{c > 0. ? (1. / bq1 * 1. / c) : 0.};
 
-        for (int iP{0}; iP < 6; ++iP) {
+        for (size_t iP{0}; iP < 6; ++iP) {
             double dadr1{bq1 * (dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + w_sign * dk21dr1[iP] * d1 + w_sign * k21 * dd1dr1[iP])};
             double dadr2{bq1 * (dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + w_sign * dk21dr2[iP] * d1 + w_sign * k21 * dd1dr2[iP])};
             double dbdr1{w_sign * bq1 * bq1 * (dk11dr1[iP] * d1 + k11 * dd1dr1[iP]) - (dk21dr1[iP] * c1 + k21 * dc1dr1[iP])};
@@ -1008,7 +1002,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         double a{k11 * c1 + w_sign * k21 * d1};
         double b{-k21 * c1};
 
-        for (int iP{0}; iP < 6; ++iP) {
+        for (size_t iP{0}; iP < 6; ++iP) {
             double dadr1{dk11dr1[iP] * c1 + k11 * dc1dr1[iP] + w_sign * dk21dr1[iP] * d1 + w_sign * k21 * dd1dr1[iP]};
             double dadr2{dk11dr2[iP] * c1 + k11 * dc1dr2[iP] + w_sign * dk21dr2[iP] * d1 + w_sign * k21 * dd1dr2[iP]};
             double dbdr1{-dk21dr1[iP] * c1 - k21 * dc1dr1[iP]};
@@ -1025,7 +1019,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         double c{b * b + a * a};
         double d{c > 0. ? (1. / bq2 * 1. / c) : 0.};
 
-        for (int iP{0}; iP < 6; ++iP) {
+        for (size_t iP{0}; iP < 6; ++iP) {
             double dadr1{bq2 * (dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + w_sign * dk22dr1[iP] * d1 + w_sign * k22 * dd1dr1[iP])};
             double dadr2{bq2 * (dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + w_sign * dk22dr2[iP] * d1 + w_sign * k22 * dd1dr2[iP])};
             double dbdr1{w_sign * bq2 * bq2 * (dk12dr1[iP] * d1 + k12 * dd1dr1[iP]) - (dk22dr1[iP] * c2 + k22 * dc2dr1[iP])};
@@ -1038,7 +1032,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         double a{k12 * c2 + w_sign * k22 * d1};
         double b{-k22 * c2};
 
-        for (int iP{0}; iP < 6; ++iP) {
+        for (size_t iP{0}; iP < 6; ++iP) {
             double dadr1{dk12dr1[iP] * c2 + k12 * dc2dr1[iP] + w_sign * dk22dr1[iP] * d1 + w_sign * k22 * dd1dr1[iP]};
             double dadr2{dk12dr2[iP] * c2 + k12 * dc2dr2[iP] + w_sign * dk22dr2[iP] * d1 + w_sign * k22 * dd1dr2[iP]};
             double dbdr1{-dk22dr1[iP] * c2 - k22 * dc2dr1[iP]};
@@ -1123,14 +1117,14 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Vector<6> dsldr1{};
     Vector<6> dsldr2{};
     Vector<6> dsldr3{};
-    for (int iP{0}; iP < 6; ++iP) {
+    for (size_t iP{0}; iP < 6; ++iP) {
         dsldr0[iP] = dsl1ds0 * min1.ds_dr[iP] + dsl1ds1 * min2.ds_dr1[iP];
         dsldr1[iP] = dsl1ds0 * min1.ds_dr1[iP] + dsl1ds1 * min2.ds_dr[iP];
         dsldr2[iP] = dsl2ds0 * min1.ds_dr[iP] + dsl2ds1 * min2.ds_dr1[iP];
         dsldr3[iP] = dsl2ds0 * min1.ds_dr1[iP] + dsl2ds1 * min2.ds_dr[iP];
     }
 
-    for (int iP{0}; iP < 6; ++iP) {
+    for (size_t iP{0}; iP < 6; ++iP) {
         min1.ds_dr[iP] += dsldr0[iP];
         min1.ds_dr1[iP] += dsldr1[iP];
         min2.ds_dr1[iP] += dsldr2[iP];
@@ -1172,7 +1166,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     PrintVector<6>(__FUNCTION__, "p22_dr1", p22_dr1);
 #endif
 
-    for (int iP{0}; iP < 6; ++iP) {
+    for (size_t iP{0}; iP < 6; ++iP) {
         double a1_dr0{ldrp2_dr0[iP] * lp1p2 + ldrp2 * lp1p2_dr0[iP] - ldrp1_dr0[iP] * p22};
         double a1_dr1{ldrp2_dr1[iP] * lp1p2 + ldrp2 * lp1p2_dr1[iP] - ldrp1_dr1[iP] * p22 - ldrp1 * p22_dr1[iP]};
         double a2_dr0{ldrp2_dr0[iP] * p12 + ldrp2 * p12_dr0[iP] - ldrp1_dr0[iP] * lp1p2 - ldrp1 * lp1p2_dr0[iP]};
@@ -1314,7 +1308,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     double a1{drp2 * p1p2 - drp1 * p22};
     double a2{drp2 * p12 - drp1 * p1p2};
 
-    for (int i{0}; i < 6; ++i) {
+    for (size_t i{0}; i < 6; ++i) {
         double da1_dr1{drp2_dr1[i] * p1p2 + drp2 * dp1p2_dr1[i] - drp1_dr1[i] * p22 - drp1 * dp22_dr1[i]};
         double da1_dr2{drp2_dr2[i] * p1p2 + drp2 * dp1p2_dr2[i] - drp1_dr2[i] * p22 - drp1 * dp22_dr2[i]};
         double da2_dr1{drp2_dr1[i] * p12 + drp2 * dp12_dr1[i] - drp1_dr1[i] * p1p2 - drp1 * dp1p2_dr1[i]};
@@ -1369,7 +1363,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     tpr.P[7] = fP[7];
 
     Matrix<8, 8> mJ{};
-    for (int i{0}; i < 8; ++i) mJ[i][i] = 1.;
+    for (size_t i{0}; i < 8; ++i) mJ[i][i] = 1.;
     mJ[0][3] = min.sB;
     mJ[0][4] = min.cB;
     mJ[1][3] = -min.cB;
@@ -1391,20 +1385,20 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     mJds[4][3] = -bq * min.cos;
     mJds[4][4] = -bq * min.sin;
 
-    for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) {
+    for (size_t i1{0}; i1 < 6; ++i1) {
+        for (size_t i2{0}; i2 < 6; ++i2) {
             mJ[i1][i2] += mJds[i1][3] * px0 * min.ds_dr[i2] + mJds[i1][4] * py0 * min.ds_dr[i2] + mJds[i1][5] * pz0 * min.ds_dr[i2];
         }
     }
 
     tpr.C = Math::MultQSQt<8>(mJ, fC);
 
-    for (int i{0}; i < 6; ++i) {
-        for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
+    for (size_t i{0}; i < 6; ++i) {
+        for (size_t j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
     }
 
-    for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) {
+    for (size_t i1{0}; i1 < 6; ++i1) {
+        for (size_t i2{0}; i2 < 6; ++i2) {
             tpr.corr[i1][i2] = mJds[i1][3] * px0 * min.ds_dr1[i2] + mJds[i1][4] * py0 * min.ds_dr1[i2] + mJds[i1][5] * pz0 * min.ds_dr1[i2];
         }
     }
@@ -1467,18 +1461,18 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
     mJds[1][4] = 1.;
     mJds[2][5] = 1.;
 
-    for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) {
+    for (size_t i1{0}; i1 < 6; ++i1) {
+        for (size_t i2{0}; i2 < 6; ++i2) {
             mJ[i1][i2] += mJds[i1][3] * px * min.ds_dr[i2] + mJds[i1][4] * py * min.ds_dr[i2] + mJds[i1][5] * pz * min.ds_dr[i2];
         }
     }
     tpr.C = Math::MultQSQt<8>(mJ, fC);
 
-    for (int i{0}; i < 6; ++i) {
-        for (int j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
+    for (size_t i{0}; i < 6; ++i) {
+        for (size_t j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
     }
-    for (int i1{0}; i1 < 6; ++i1) {
-        for (int i2{0}; i2 < 6; ++i2) {
+    for (size_t i1{0}; i1 < 6; ++i1) {
+        for (size_t i2{0}; i2 < 6; ++i2) {
             tpr.corr[i1][i2] = mJds[i1][3] * px * min.ds_dr1[i2] + mJds[i1][4] * py * min.ds_dr1[i2] + mJds[i1][5] * pz * min.ds_dr1[i2];
         }
     }

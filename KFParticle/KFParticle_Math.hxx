@@ -13,6 +13,7 @@ namespace Const {
 constexpr double Kappa{0.000299792458};  // (GeV/c) / (kG/cm)
 constexpr double AbsAlmostZero{1.E-8};
 constexpr double BigNumber{1.E8};
+constexpr double Epsilon{1.E-6};
 }  // namespace Const
 
 template <size_t N>
@@ -83,22 +84,29 @@ static void PrintSplitMatrix(std::string_view fcn_name, std::string_view name, c
 
 // Convert a pair of indices {i,j} of the covariance matrix to one index corresponding to the triangular form
 template <typename D>
-inline D IJ(D i, D j) {
+constexpr D IJ(D i, D j) {
     return (j <= i) ? i * (i + 1) / 2 + j : j * (j + 1) / 2 + i;
 }
 
 template <size_t N, size_t M>
 inline Vector<M> Slice(const Vector<N> &in, size_t begin_i = 0) {
     Vector<M> out{};
-    for (size_t i{begin_i}; i < M; ++i) out[i - begin_i] = in[i];
+    for (size_t i{0}; i < M; ++i) {
+        const size_t src{begin_i + i};
+        if (src < N) out[i] = in[src];
+    }
     return out;
 }
 
 template <size_t L, size_t K, size_t N, size_t M>
 inline Matrix<N, M> Slice(const Matrix<L, K> &in, size_t begin_i = 0, size_t begin_j = 0) {
     Matrix<N, M> out{};
-    for (size_t i{begin_i}; i < N; ++i) {
-        for (size_t j{begin_j}; j < M; ++j) out[i - begin_i][j - begin_j] = in[i][j];
+    for (size_t i{0}; i < N; ++i) {
+        for (size_t j{0}; j < M; ++j) {
+            const size_t src_i{begin_i + i};
+            const size_t src_j{begin_j + j};
+            if (src_i < L && src_j < K) out[i][j] = in[src_i][src_j];
+        }
     }
     return out;
 }
@@ -107,13 +115,13 @@ namespace Math {
 
 // Based on https://stackoverflow.com/a/64247207
 template <class S>
-inline std::pair<S, S> sincos(S arg) {
+constexpr std::pair<S, S> sincos(S arg) {
     return {std::sin(arg), std::cos(arg)};
 }
 
 // Return the dot product of vector `vec` with itself.
 template <size_t N>
-inline double SquaredNorm(const Vector<N> &vec) {
+constexpr double SquaredNorm(const Vector<N> &vec) {
     double sum{0.};
     for (size_t i{0}; i < N; ++i) sum += vec[i] * vec[i];
     return sum;
@@ -121,7 +129,7 @@ inline double SquaredNorm(const Vector<N> &vec) {
 
 // Return the norm of vector `vec`. It's equivalent to the square root of the dot product of vector `vec` with itself.
 template <size_t N>
-inline double Norm(const Vector<N> &vec) {
+constexpr double Norm(const Vector<N> &vec) {
     return std::sqrt(SquaredNorm(vec));
 }
 

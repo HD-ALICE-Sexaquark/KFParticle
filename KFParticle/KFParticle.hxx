@@ -24,6 +24,7 @@
 #define KFPARTICLE_HXX
 
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -114,10 +115,10 @@ class alignas(32) Particle {
     }
 
     // Pseudorapidity.
-    double Eta() const { return std::atanh(Pz() / P()); };
+    double Eta() const { return std::atanh(Pz() / P() + Const::Epsilon); };
 
     // Rapidity.
-    double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz())) / 2.; };
+    double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz() + Const::Epsilon)) / 2.; };
 
     // Radius (cm) in cylindrical coordinates.
     double Radius2D() const { return Math::Norm<2>({X(), Y()}); };
@@ -135,7 +136,7 @@ class alignas(32) Particle {
     double GetDCA(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return -1.;  // protection
         Vector<3> diff{};
-        for (int i{0}; i < 3; ++i) {
+        for (size_t i{0}; i < 3; ++i) {
             diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
         }
         return Math::Norm<3>(diff);
@@ -145,7 +146,7 @@ class alignas(32) Particle {
     double GetDCA(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
         Vector<3> diff{};
-        for (int i{0}; i < 3; ++i) {
+        for (size_t i{0}; i < 3; ++i) {
             diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
         }
         return Math::Norm<3>(diff);
@@ -155,7 +156,7 @@ class alignas(32) Particle {
     double GetDCAxy(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return -1.;  // protection
         Vector<2> diff{};
-        for (int i{0}; i < 2; ++i) {
+        for (size_t i{0}; i < 2; ++i) {
             diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
         }
         return Math::Norm<2>(diff);
@@ -165,7 +166,7 @@ class alignas(32) Particle {
     double GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
         Vector<2> diff{};
-        for (int i{0}; i < 2; ++i) {
+        for (size_t i{0}; i < 2; ++i) {
             diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
         }
         return Math::Norm<2>(diff);
@@ -181,8 +182,8 @@ class alignas(32) Particle {
         if (fNDF < -1) {  // first daughter -> just copy
             fNDF += 2;
             fQ = daughter.Charge();
-            for (int i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
-            for (int i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
+            for (size_t i{0}; i < 7; ++i) fP[i] = daughter.fP[i];
+            for (size_t i{0}; i < 28; ++i) fC[i] = daughter.fC[i];
             return;
         }
         AddDaughterWithEnergyFit(daughter, bz);
@@ -238,7 +239,7 @@ class alignas(32) Particle {
         std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
 #endif
 
-        for (int i{0}; i < 6; ++i) fP[i] = param[i];
+        for (size_t i{0}; i < 6; ++i) fP[i] = param[i];
         double energy{std::sqrt(mass * mass + fP[3] * fP[3] + fP[4] * fP[4] + fP[5] * fP[5])};
         fP[6] = energy;
         fP[7] = 0.;
@@ -247,7 +248,7 @@ class alignas(32) Particle {
         double h1{fP[4] / energy};
         double h2{fP[5] / energy};
 
-        for (int i{0}; i < 21; ++i) fC[i] = cov[i];
+        for (size_t i{0}; i < 21; ++i) fC[i] = cov[i];
         fC[21] = h0 * fC[6] + h1 * fC[10] + h2 * fC[15];
         fC[22] = h0 * fC[7] + h1 * fC[11] + h2 * fC[16];
         fC[23] = h0 * fC[8] + h1 * fC[12] + h2 * fC[17];
@@ -274,9 +275,9 @@ class alignas(32) Particle {
 #if KF_DEBUG
         std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
 #endif
-        for (int i{0}; i < 7; ++i) fP[i] = param[i];
+        for (size_t i{0}; i < 7; ++i) fP[i] = param[i];
         fP[7] = 0.;
-        for (int i{0}; i < 28; ++i) fC[i] = cov[i];
+        for (size_t i{0}; i < 28; ++i) fC[i] = cov[i];
         fC[35] = 1.;
         fQ = charge;
 #if KF_DEBUG
