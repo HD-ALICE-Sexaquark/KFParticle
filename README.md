@@ -14,7 +14,7 @@ A fork of [KFParticle](https://github.com/alisw/KFParticle), with:
 ## Requirements
 
 - CMake (v3.15 or higher)
-- C++ compiler compatible with C++17
+- C++ compiler compatible with C++23
 
 ## Build
 
@@ -25,9 +25,8 @@ cmake --build .
 cmake --install . --prefix <install-dir>
 ```
 
-Additional `<options>`:
+Additional options:
 
-* `-DCMAKE_EXPORT_COMPILE_COMMANDS=1` -- export `compile_commands.json` file
 * `-DKF_DEBUG=ON` -- enable debug messages
 
 ## Test
@@ -36,7 +35,7 @@ Using `g++`:
 
 ```bash
 cd KFParticleTest/
-g++ KFParticleTest.cxx -std=c++17 -march=native -mtune=native -O3 -DNDEBUG -I<install-dir>/include -L<install-dir>/lib -lKFParticle -o Test
+g++ KFParticleTest.cxx -std=c++23 -march=native -mtune=native -O3 -DNDEBUG -I<install-dir>/include -L<install-dir>/lib -lKFParticle -o Test
 ./Test # output should be equivalent to KFParticleTest/test.txt
 ```
 

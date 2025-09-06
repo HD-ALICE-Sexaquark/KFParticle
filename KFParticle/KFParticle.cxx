@@ -20,11 +20,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "KFParticle.hxx"
-#include "KFParticle_Math.hxx"
-
 #include <algorithm>
 #include <tuple>
+
+#include "KFParticle.hxx"
+#include "KFParticle_Const.hxx"
+#include "KFParticle_Math.hxx"
+#include "KFParticle_Utils.hxx"
 
 namespace KF {
 
@@ -43,7 +45,7 @@ namespace KF {
 // - `D` : the correlation matrix between the current and daughter particles
 Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     if (fNDF == -1) {
@@ -53,19 +55,19 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
         auto tpr2 = daughter.Transport(min2, bz);
 
 #if KF_DEBUG
-        PrintMatrix<6, 6>(__FUNCTION__, "F1", tpr1.jacob);
-        PrintMatrix<6, 6>(__FUNCTION__, "F2", tpr1.corr);
-        PrintMatrix<6, 6>(__FUNCTION__, "F3", tpr2.corr);
-        PrintMatrix<6, 6>(__FUNCTION__, "F4", tpr2.jacob);
+        Utils::Print(__FUNCTION__, "F1", tpr1.jacob);
+        Utils::Print(__FUNCTION__, "F2", tpr1.corr);
+        Utils::Print(__FUNCTION__, "F3", tpr2.corr);
+        Utils::Print(__FUNCTION__, "F4", tpr2.jacob);
 #endif
         SymMatrix<6> V0Tmp{Math::MultQSQt<6>(tpr1.corr, daughter.Cov_6x6())};
         SymMatrix<6> V1Tmp{Math::MultQSQt<6>(tpr2.corr, Cov_6x6())};
 #if KF_DEBUG
-        PrintSymMatrix<6>(__FUNCTION__, "V0Tmp", V0Tmp);
-        PrintSymMatrix<6>(__FUNCTION__, "V1Tmp", V1Tmp);
+        Utils::Print(__FUNCTION__, "V0Tmp", V0Tmp);
+        Utils::Print(__FUNCTION__, "V1Tmp", V1Tmp);
 #endif
 
-        Result::Measurement meas{tpr1.C, tpr2.C, Matrix<3, 3>{}, tpr1.P, tpr2.P};
+        Result::Measurement meas{.C1 = tpr1.C, .C2 = tpr2.C, .D = Matrix<3, 3>{}, .P1 = tpr1.P, .P2 = tpr2.P};
 
         for (size_t iC{0}; iC < 21; ++iC) {
             meas.C1[iC] += V0Tmp[iC];
@@ -105,15 +107,15 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
             }
         }
 #if KF_DEBUG
-        PrintVector<8>(__FUNCTION__, "meas.P1", meas.P1);
-        PrintVector<8>(__FUNCTION__, "meas.P2", meas.P2);
-        PrintSymMatrix<8>(__FUNCTION__, "meas.C1", meas.C1);
-        PrintSymMatrix<8>(__FUNCTION__, "meas.C2", meas.C2);
-        PrintMatrix<6, 6>(__FUNCTION__, "C1F1T", C1F1T);
-        PrintMatrix<6, 6>(__FUNCTION__, "F3C1F1T", F3C1F1T);
-        PrintMatrix<6, 6>(__FUNCTION__, "C2F2T", C2F2T);
-        PrintMatrix<3, 3>(__FUNCTION__, "meas.D", meas.D);
-        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+        Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
+        Utils::Print(__FUNCTION__, "meas.P2", meas.P2);
+        Utils::Print(__FUNCTION__, "meas.C1", meas.C1);
+        Utils::Print(__FUNCTION__, "meas.C2", meas.C2);
+        Utils::Print(__FUNCTION__, "C1F1T", C1F1T);
+        Utils::Print(__FUNCTION__, "F3C1F1T", F3C1F1T);
+        Utils::Print(__FUNCTION__, "C2F2T", C2F2T);
+        Utils::Print(__FUNCTION__, "meas.D", meas.D);
+        std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
         return meas;
@@ -123,7 +125,7 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
     // >> transport to vertex //
     auto min2 = daughter.Minimize({fP[0], fP[1], fP[2]}, bz);
     auto tpr2 = daughter.Transport(min2, bz);
-    Result::Measurement meas{fC, tpr2.C, Matrix<3, 3>{}, fP, tpr2.P};
+    Result::Measurement meas{.C1 = fC, .C2 = tpr2.C, .D = Matrix<3, 3>{}, .P1 = fP, .P2 = tpr2.P};
 
     Matrix<3, 6> VFT{};
     for (size_t i{0}; i < 3; ++i) {
@@ -158,14 +160,14 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
     meas.C2[4] += FVFT[2][1];
     meas.C2[5] += FVFT[2][2];
 #if KF_DEBUG
-    PrintMatrix<3, 6>(__FUNCTION__, "VFT", VFT);
-    PrintMatrix<6, 6>(__FUNCTION__, "FVFT", FVFT);
-    PrintVector<8>(__FUNCTION__, "meas.P1", meas.P1);
-    PrintVector<8>(__FUNCTION__, "meas.P2", meas.P2);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C1", meas.C1);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C2", meas.C2);
-    PrintMatrix<3, 3>(__FUNCTION__, "meas.D", meas.D);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "VFT", VFT);
+    Utils::Print(__FUNCTION__, "FVFT", FVFT);
+    Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
+    Utils::Print(__FUNCTION__, "meas.P2", meas.P2);
+    Utils::Print(__FUNCTION__, "meas.C1", meas.C1);
+    Utils::Print(__FUNCTION__, "meas.C2", meas.C2);
+    Utils::Print(__FUNCTION__, "meas.D", meas.D);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return meas;
@@ -183,7 +185,7 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 // Note: it will modify the state of the current `KF::Particle`
 void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     auto meas = GetMeasurement(daughter, bz);
@@ -195,20 +197,20 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
                     meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
     Math::InvertCholesky3(mS);
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "meas.P1", meas.P1);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C1", meas.C1);
-    PrintVector<8>(__FUNCTION__, "meas.P2", meas.P2);
-    PrintSymMatrix<8>(__FUNCTION__, "meas.C2", meas.C2);
-    PrintMatrix<3, 3>(__FUNCTION__, "meas.D", meas.D);
-    PrintSymMatrix<3>(__FUNCTION__, "mS", mS);
+    Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
+    Utils::Print(__FUNCTION__, "meas.C1", meas.C1);
+    Utils::Print(__FUNCTION__, "meas.P2", meas.P2);
+    Utils::Print(__FUNCTION__, "meas.C2", meas.C2);
+    Utils::Print(__FUNCTION__, "meas.D", meas.D);
+    Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
     Vector<3> zeta{meas.P2[0] - meas.P1[0], meas.P2[1] - meas.P1[1], meas.P2[2] - meas.P1[2]};
     double dChi2{(mS[0] * zeta[0] + mS[1] * zeta[1] + mS[3] * zeta[2]) * zeta[0] + (mS[1] * zeta[0] + mS[2] * zeta[1] + mS[4] * zeta[2]) * zeta[1] +
                  (mS[3] * zeta[0] + mS[4] * zeta[1] + mS[5] * zeta[2]) * zeta[2]};
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "zeta", zeta);
-    PrintValue(__FUNCTION__, "dChi2", dChi2);
+    Utils::Print(__FUNCTION__, "zeta", zeta);
+    Utils::PrintDouble(__FUNCTION__, "dChi2", dChi2);
 #endif
     if (dChi2 > chi2_threshold) return;
 
@@ -236,8 +238,8 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     fC[27] += meas.C2[27];
 
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "fP (before Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (before Kalman gain)", fC);
+    Utils::Print(__FUNCTION__, "fP (before Kalman gain)", fP);
+    Utils::Print(__FUNCTION__, "fC (before Kalman gain)", fC);
 #endif
 
     // CHt = CH' - D'
@@ -269,10 +271,10 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
         }
     }
 #if KF_DEBUG
-    Prsize_tSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    Prsize_tSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
-    Prsize_tVector<8>(__FUNCTION__, "fP (after Kalman gain)", fP);
-    Prsize_tSymMatrix<8>(__FUNCTION__, "fC (after Kalman gain)", fC);
+    Utils::PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
+    Utils::PrintSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
+    Utils::Print(__FUNCTION__, "fP (after Kalman gain)", fP);
+    Utils::Print(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
     // do something else? //
@@ -311,11 +313,11 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     fC[4] += M[1][2] + M[2][1];
     fC[5] += 2. * M[2][2];
 #if KF_DEBUG
-    PrintMatrix<3, 3>(__FUNCTION__, "K", K);
-    PrintMatrix<3, 3>(__FUNCTION__, "K2", K2);
-    PrintMatrix<3, 3>(__FUNCTION__, "A", A);
-    PrintMatrix<3, 3>(__FUNCTION__, "M", M);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (the end)", fC);
+    Utils::Print(__FUNCTION__, "K", K);
+    Utils::Print(__FUNCTION__, "K2", K2);
+    Utils::Print(__FUNCTION__, "A", A);
+    Utils::Print(__FUNCTION__, "M", M);
+    Utils::Print(__FUNCTION__, "fC (the end)", fC);
 #endif
 
     // update rest of properties //
@@ -324,7 +326,7 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     fQ += daughter.Charge();
     fChi2 += dChi2;
 #if KF_DEBUG
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 }
 
@@ -338,7 +340,7 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 // Note: should be executed as final step, after the particle has been added all of its daughters!
 void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>& prod_cov, double bz, double chi2_threshold) {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     // store current particle's vertex information //
@@ -372,18 +374,18 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
                     measC[3] + prod_cov[3], measC[4] + prod_cov[4], measC[5] + prod_cov[5]};
     Math::InvertCholesky3(mS);
 #if KF_DEBUG
-    PrintSymMatrix<3>(__FUNCTION__, "CTmp", CTmp);
-    PrintSymMatrix<3>(__FUNCTION__, "measC", measC);
-    PrintMatrix<3, 3>(__FUNCTION__, "D", D);
-    PrintSymMatrix<3>(__FUNCTION__, "mS", mS);
+    Utils::Print(__FUNCTION__, "CTmp", CTmp);
+    Utils::Print(__FUNCTION__, "measC", measC);
+    Utils::Print(__FUNCTION__, "D", D);
+    Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
     Vector<3> res{prod_vtx[0] - tpr.P[0], prod_vtx[1] - tpr.P[1], prod_vtx[2] - tpr.P[2]};
     double dChi2{(mS[0] * res[0] + mS[1] * res[1] + mS[3] * res[2]) * res[0] + (mS[1] * res[0] + mS[2] * res[1] + mS[4] * res[2]) * res[1] +
                  (mS[3] * res[0] + mS[4] * res[1] + mS[5] * res[2]) * res[2]};
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "res", res);
-    PrintValue(__FUNCTION__, "dChi2", dChi2);
+    Utils::Print(__FUNCTION__, "res", res);
+    Utils::PrintDouble(__FUNCTION__, "dChi2", dChi2);
 #endif
     if (dChi2 > chi2_threshold) return;
 
@@ -394,8 +396,8 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
     for (size_t i{6}; i < 28; ++i) fC[i] = tpr.C[i];
 
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "fP (before Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (before Kalman gain)", fC);
+    Utils::Print(__FUNCTION__, "fP (before Kalman gain)", fP);
+    Utils::Print(__FUNCTION__, "fC (before Kalman gain)", fC);
 #endif
 
     // Kalman gain calculation //
@@ -421,10 +423,10 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
         }
     }
 #if KF_DEBUG
-    PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    PrintSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
-    PrintVector<8>(__FUNCTION__, "fP (after Kalman gain)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (after Kalman gain)", fC);
+    Utils::PrintSplitMatrix(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
+    Utils::PrintSplitMatrix(__FUNCTION__, "KGain", k0, k1, k2);
+    Utils::Print(__FUNCTION__, "fP (after Kalman gain)", fP);
+    Utils::Print(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
     Matrix<3, 3> K{};
@@ -461,11 +463,11 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
     fC[4] += M[1][2] + M[2][1];
     fC[5] += 2. * M[2][2];
 #if KF_DEBUG
-    PrintMatrix<3, 3>(__FUNCTION__, "K", K);
-    PrintMatrix<3, 3>(__FUNCTION__, "K2", K2);
-    PrintMatrix<3, 3>(__FUNCTION__, "A", A);
-    PrintMatrix<3, 3>(__FUNCTION__, "M", M);
-    PrintSymMatrix<8>(__FUNCTION__, "fC", fC);
+    Utils::Print(__FUNCTION__, "K", K);
+    Utils::Print(__FUNCTION__, "K2", K2);
+    Utils::Print(__FUNCTION__, "A", A);
+    Utils::Print(__FUNCTION__, "M", M);
+    Utils::Print(__FUNCTION__, "fC", fC);
 #endif
 
     // update chi2 and ndf //
@@ -493,11 +495,11 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
         }
     }
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "fChi2", fChi2);
-    PrintValue(__FUNCTION__, "fNDF", fNDF);
-    PrintVector<8>(__FUNCTION__, "fP (the end)", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC (the end)", fC);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::PrintDouble(__FUNCTION__, "fChi2", fChi2);
+    Utils::Print(__FUNCTION__, "fNDF", fNDF);
+    Utils::Print(__FUNCTION__, "fP (the end)", fP);
+    Utils::Print(__FUNCTION__, "fC (the end)", fC);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 }
 
@@ -508,7 +510,7 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 // Note: it will modify the state of the current `KF::Particle`
 void Particle::AddMassConstraint(double target_mass) {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     double m2{target_mass * target_mass};
@@ -542,9 +544,9 @@ void Particle::AddMassConstraint(double target_mass) {
     fChi2 += zeta * zeta / s2;
     fNDF += 1;  // one d.o.f. is added because a single independent constraint has been applied
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "fP", fP);
-    PrintSymMatrix<8>(__FUNCTION__, "fC", fC);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "fP", fP);
+    Utils::Print(__FUNCTION__, "fC", fC);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 }
 
@@ -556,7 +558,7 @@ void Particle::AddMassConstraint(double target_mass) {
 // TO CONSIDER: p2 and (p2*p2) cannot be zero
 Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     double x0{fP[0]};
@@ -596,11 +598,11 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     min.pca.dir[1] = py0;
     min.pca.dir[2] = pz0;
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min.ds", min.ds);
-    PrintVector<6>(__FUNCTION__, "min.ds_dr", min.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min.ds_dr1", min.ds_dr1);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z)", min.pca.xyz);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::PrintDouble(__FUNCTION__, "min.ds", min.ds);
+    Utils::Print(__FUNCTION__, "min.ds_dr", min.ds_dr);
+    Utils::Print(__FUNCTION__, "min.ds_dr1", min.ds_dr1);
+    Utils::Print(__FUNCTION__, "min.(x,y,z)", min.pca.xyz);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
     return min;
 }
@@ -616,7 +618,7 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
 // - cache properties : dir, pca, theta, sin, cos, sB, cB
 Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     Result::Minimization min{};
@@ -658,12 +660,12 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     min.pca.dir[1] = -min.sin * px0 + min.cos * py0;
     min.pca.dir[2] = pz0;
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min.ds (no z-correction)", min.ds);
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.xyz);
-    // PrintValue(__FUNCTION__, "dx", dx); // PENDING
-    // PrintValue(__FUNCTION__, "dy", dy); // PENDING
-    // PrintValue(__FUNCTION__, "dz", dz); // PENDING
-    // PrintValue(__FUNCTION__, "dca", std::sqrt(dca_sq)); // PENDING
+    Utils::PrintDouble(__FUNCTION__, "min.ds (no z-correction)", min.ds);
+    Utils::Print(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.xyz);
+    // Utils::Print(__FUNCTION__, "dx", dx); // PENDING
+    // Utils::Print(__FUNCTION__, "dy", dy); // PENDING
+    // Utils::Print(__FUNCTION__, "dz", dz); // PENDING
+    // Utils::Print(__FUNCTION__, "dca", std::sqrt(dca_sq)); // PENDING
 #endif
 
     // 1.b -- handle derivatives //
@@ -682,8 +684,8 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     min.ds_dr1[1] = -min.ds_dr[1];
     min.ds_dr1[2] = -min.ds_dr[2];
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "min.ds_dr (no z-correction)", min.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min.ds_dr1 (no z-correction)", min.ds_dr1);
+    Utils::Print(__FUNCTION__, "min.ds_dr (no z-correction)", min.ds_dr);
+    Utils::Print(__FUNCTION__, "min.ds_dr1 (no z-correction)", min.ds_dr1);
 #endif
 
     // 2 -- add z-component as small correction //
@@ -710,15 +712,15 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     min.ds_dr1[1] = -min.ds_dr[1];
     min.ds_dr1[2] = -min.ds_dr[2];
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "min.ds_dr (after z-correction)", min.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min.ds_dr1 (after z-correction)", min.ds_dr1);
+    Utils::Print(__FUNCTION__, "min.ds_dr (after z-correction)", min.ds_dr);
+    Utils::Print(__FUNCTION__, "min.ds_dr1 (after z-correction)", min.ds_dr1);
 #endif
 
     // 2.b -- update ds //
 
     min.ds += sz;
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min.ds (after z-correction)", min.ds);
+    Utils::PrintDouble(__FUNCTION__, "min.ds (after z-correction)", min.ds);
 #endif
 
     // 2.c -- update rest of cache properties //
@@ -760,8 +762,8 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
     dS += std::atan2(abq, p2 + bq * (dy * p[3] - dx * p[4])) / bq;
     */
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca.xyz);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "min.(x,y,z) (after z-correction)", min.pca.xyz);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return min;
@@ -777,7 +779,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
 // - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds2)/dr1, d(ds1)/dr2
 std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHelix(const Particle& p, double bz) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     Result::Minimization min1;
@@ -907,15 +909,15 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         }
     }
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min1.ds (no z-correction)", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
-    PrintValue(__FUNCTION__, "min2.ds (no z-correction)", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
-    PrintValue(__FUNCTION__, "dx", dx);
-    PrintValue(__FUNCTION__, "dy", dy);
-    PrintValue(__FUNCTION__, "dz", dz);
-    PrintValue(__FUNCTION__, "w_sign", w_sign);
-    PrintValue(__FUNCTION__, "dca", std::sqrt(dca_sq));
+    Utils::PrintDouble(__FUNCTION__, "min1.ds (no z-correction)", min1.ds);
+    Utils::Print(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
+    Utils::PrintDouble(__FUNCTION__, "min2.ds (no z-correction)", min2.ds);
+    Utils::Print(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
+    Utils::PrintDouble(__FUNCTION__, "dx", dx);
+    Utils::PrintDouble(__FUNCTION__, "dy", dy);
+    Utils::PrintDouble(__FUNCTION__, "dz", dz);
+    Utils::Print(__FUNCTION__, "w_sign", w_sign);
+    Utils::PrintDouble(__FUNCTION__, "dca", std::sqrt(dca_sq));
 #endif
 
     // 1.b -- handle derivatives //
@@ -965,22 +967,22 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         dd1dr2[4] += py02 * pt12 / d1;
     }
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "dk11dr1", dk11dr1);
-    PrintVector<6>(__FUNCTION__, "dk11dr2", dk11dr2);
-    PrintVector<6>(__FUNCTION__, "dk12dr1", dk12dr1);
-    PrintVector<6>(__FUNCTION__, "dk12dr2", dk12dr2);
-    PrintVector<6>(__FUNCTION__, "dk21dr1", dk21dr1);
-    PrintVector<6>(__FUNCTION__, "dk21dr2", dk21dr2);
-    PrintVector<6>(__FUNCTION__, "dk22dr1", dk22dr1);
-    PrintVector<6>(__FUNCTION__, "dk22dr2", dk22dr2);
-    PrintVector<6>(__FUNCTION__, "dkddr1", dkddr1);
-    PrintVector<6>(__FUNCTION__, "dkddr2", dkddr2);
-    PrintVector<6>(__FUNCTION__, "dc1dr1", dc1dr1);
-    PrintVector<6>(__FUNCTION__, "dc1dr2", dc1dr2);
-    PrintVector<6>(__FUNCTION__, "dc2dr1", dc2dr1);
-    PrintVector<6>(__FUNCTION__, "dc2dr2", dc2dr2);
-    PrintVector<6>(__FUNCTION__, "dd1dr1", dd1dr1);
-    PrintVector<6>(__FUNCTION__, "dd1dr2", dd1dr2);
+    Utils::Print(__FUNCTION__, "dk11dr1", dk11dr1);
+    Utils::Print(__FUNCTION__, "dk11dr2", dk11dr2);
+    Utils::Print(__FUNCTION__, "dk12dr1", dk12dr1);
+    Utils::Print(__FUNCTION__, "dk12dr2", dk12dr2);
+    Utils::Print(__FUNCTION__, "dk21dr1", dk21dr1);
+    Utils::Print(__FUNCTION__, "dk21dr2", dk21dr2);
+    Utils::Print(__FUNCTION__, "dk22dr1", dk22dr1);
+    Utils::Print(__FUNCTION__, "dk22dr2", dk22dr2);
+    Utils::Print(__FUNCTION__, "dkddr1", dkddr1);
+    Utils::Print(__FUNCTION__, "dkddr2", dkddr2);
+    Utils::Print(__FUNCTION__, "dc1dr1", dc1dr1);
+    Utils::Print(__FUNCTION__, "dc1dr2", dc1dr2);
+    Utils::Print(__FUNCTION__, "dc2dr1", dc2dr1);
+    Utils::Print(__FUNCTION__, "dc2dr2", dc2dr2);
+    Utils::Print(__FUNCTION__, "dd1dr1", dd1dr1);
+    Utils::Print(__FUNCTION__, "dd1dr2", dd1dr2);
 #endif
 
     if (!isStraight1) {
@@ -1048,10 +1050,10 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     double px2{min2.pca.dir[0]};
     double py2{min2.pca.dir[1]};
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "px1", px1);
-    PrintValue(__FUNCTION__, "py1", py1);
-    PrintValue(__FUNCTION__, "px2", px2);
-    PrintValue(__FUNCTION__, "py2", py2);
+    Utils::PrintDouble(__FUNCTION__, "px1", px1);
+    Utils::PrintDouble(__FUNCTION__, "py1", py1);
+    Utils::PrintDouble(__FUNCTION__, "px2", px2);
+    Utils::PrintDouble(__FUNCTION__, "py2", py2);
 #endif
 
     // 2 -- add z-component as small correction //
@@ -1063,8 +1065,8 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     double detp{lp1p2 * lp1p2 - p12 * p22};  // protection
     if (std::abs(detp) < Const::AbsAlmostZero || detp * detp < Const::AbsAlmostZero) {
 #if KF_DEBUG
-        std::cout << "(" << __FUNCTION__ << ") early return has been called!" << '\n';
-        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+        std::println(stdout, "({}) early return has been called!", __FUNCTION__);
+        std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
         return {min1, min2};
     }
@@ -1093,24 +1095,24 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     double dsl2ds0{a2_ds0 / detp - a2 * detp_ds0 / (detp * detp)};
     double dsl2ds1{a2_ds1 / detp - a2 * detp_ds1 / (detp * detp)};
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "a1", a1);
-    PrintValue(__FUNCTION__, "a2", a2);
-    PrintValue(__FUNCTION__, "lp1p2_ds0", lp1p2_ds0);
-    PrintValue(__FUNCTION__, "lp1p2_ds1", lp1p2_ds1);
-    PrintValue(__FUNCTION__, "ldrp1_ds0", ldrp1_ds0);
-    PrintValue(__FUNCTION__, "ldrp1_ds1", ldrp1_ds1);
-    PrintValue(__FUNCTION__, "ldrp2_ds0", ldrp2_ds0);
-    PrintValue(__FUNCTION__, "ldrp2_ds1", ldrp2_ds1);
-    PrintValue(__FUNCTION__, "detp_ds0", detp_ds0);
-    PrintValue(__FUNCTION__, "detp_ds1", detp_ds1);
-    PrintValue(__FUNCTION__, "a1_ds0", a1_ds0);
-    PrintValue(__FUNCTION__, "a1_ds1", a1_ds1);
-    PrintValue(__FUNCTION__, "a2_ds0", a2_ds0);
-    PrintValue(__FUNCTION__, "a2_ds1", a2_ds1);
-    PrintValue(__FUNCTION__, "dsl1ds0", dsl1ds0);
-    PrintValue(__FUNCTION__, "dsl1ds1", dsl1ds1);
-    PrintValue(__FUNCTION__, "dsl2ds0", dsl2ds0);
-    PrintValue(__FUNCTION__, "dsl2ds1", dsl2ds1);
+    Utils::PrintDouble(__FUNCTION__, "a1", a1);
+    Utils::PrintDouble(__FUNCTION__, "a2", a2);
+    Utils::PrintDouble(__FUNCTION__, "lp1p2_ds0", lp1p2_ds0);
+    Utils::PrintDouble(__FUNCTION__, "lp1p2_ds1", lp1p2_ds1);
+    Utils::PrintDouble(__FUNCTION__, "ldrp1_ds0", ldrp1_ds0);
+    Utils::PrintDouble(__FUNCTION__, "ldrp1_ds1", ldrp1_ds1);
+    Utils::PrintDouble(__FUNCTION__, "ldrp2_ds0", ldrp2_ds0);
+    Utils::PrintDouble(__FUNCTION__, "ldrp2_ds1", ldrp2_ds1);
+    Utils::PrintDouble(__FUNCTION__, "detp_ds0", detp_ds0);
+    Utils::PrintDouble(__FUNCTION__, "detp_ds1", detp_ds1);
+    Utils::PrintDouble(__FUNCTION__, "a1_ds0", a1_ds0);
+    Utils::PrintDouble(__FUNCTION__, "a1_ds1", a1_ds1);
+    Utils::PrintDouble(__FUNCTION__, "a2_ds0", a2_ds0);
+    Utils::PrintDouble(__FUNCTION__, "a2_ds1", a2_ds1);
+    Utils::PrintDouble(__FUNCTION__, "dsl1ds0", dsl1ds0);
+    Utils::PrintDouble(__FUNCTION__, "dsl1ds1", dsl1ds1);
+    Utils::PrintDouble(__FUNCTION__, "dsl2ds0", dsl2ds0);
+    Utils::PrintDouble(__FUNCTION__, "dsl2ds1", dsl2ds1);
 #endif
 
     Vector<6> dsldr0{};
@@ -1131,10 +1133,10 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         min2.ds_dr[iP] += dsldr3[iP];
     }
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr (after z-correction 1)", min1.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr1 (after z-correction 1)", min1.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr1 (after z-correction 1)", min2.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr (after z-correction 1)", min2.ds_dr);
+    Utils::Print(__FUNCTION__, "min1.ds_dr (after z-correction 1)", min1.ds_dr);
+    Utils::Print(__FUNCTION__, "min1.ds_dr1 (after z-correction 1)", min1.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr1 (after z-correction 1)", min2.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr (after z-correction 1)", min2.ds_dr);
 #endif
 
     Vector<6> lp1p2_dr0{0., 0., 0., min1.cos * px2 - py2 * min1.sin, min1.cos * py2 + px2 * min1.sin, pz02};
@@ -1156,14 +1158,14 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Vector<6> p12_dr0{0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
     Vector<6> p22_dr1{0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "lp1p2_dr0", lp1p2_dr0);
-    PrintVector<6>(__FUNCTION__, "lp1p2_dr1", lp1p2_dr1);
-    PrintVector<6>(__FUNCTION__, "ldrp1_dr0", ldrp1_dr0);
-    PrintVector<6>(__FUNCTION__, "ldrp1_dr1", ldrp1_dr1);
-    PrintVector<6>(__FUNCTION__, "ldrp2_dr0", ldrp2_dr0);
-    PrintVector<6>(__FUNCTION__, "ldrp2_dr1", ldrp2_dr1);
-    PrintVector<6>(__FUNCTION__, "p12_dr0", p12_dr0);
-    PrintVector<6>(__FUNCTION__, "p22_dr1", p22_dr1);
+    Utils::Print(__FUNCTION__, "lp1p2_dr0", lp1p2_dr0);
+    Utils::Print(__FUNCTION__, "lp1p2_dr1", lp1p2_dr1);
+    Utils::Print(__FUNCTION__, "ldrp1_dr0", ldrp1_dr0);
+    Utils::Print(__FUNCTION__, "ldrp1_dr1", ldrp1_dr1);
+    Utils::Print(__FUNCTION__, "ldrp2_dr0", ldrp2_dr0);
+    Utils::Print(__FUNCTION__, "ldrp2_dr1", ldrp2_dr1);
+    Utils::Print(__FUNCTION__, "p12_dr0", p12_dr0);
+    Utils::Print(__FUNCTION__, "p22_dr1", p22_dr1);
 #endif
 
     for (size_t iP{0}; iP < 6; ++iP) {
@@ -1180,10 +1182,10 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         min2.ds_dr[iP] += a2_dr1 / detp - a2 * detp_dr1 / (detp * detp);
     }
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr (after z-correction 2)", min1.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr1 (after z-correction 2)", min1.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr1 (after z-correction 2)", min2.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr (after z-correction 2)", min2.ds_dr);
+    Utils::Print(__FUNCTION__, "min1.ds_dr (after z-correction 2)", min1.ds_dr);
+    Utils::Print(__FUNCTION__, "min1.ds_dr1 (after z-correction 2)", min1.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr1 (after z-correction 2)", min2.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr (after z-correction 2)", min2.ds_dr);
 #endif
 
     // 2.b -- update ds //
@@ -1191,8 +1193,8 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     min1.ds += a1 / detp;
     min2.ds += a2 / detp;
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min1.ds (after z-correction)", min1.ds);
-    PrintValue(__FUNCTION__, "min2.ds (after z-correction)", min2.ds);
+    Utils::PrintDouble(__FUNCTION__, "min1.ds (after z-correction)", min1.ds);
+    Utils::PrintDouble(__FUNCTION__, "min2.ds (after z-correction)", min2.ds);
 #endif
 
     // 2.c -- update rest of cache properties //
@@ -1221,9 +1223,9 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     min2.pca.dir[1] = -min2.sin * px02 + min2.cos * py02;
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca.xyz);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca.xyz);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "min1.(x,y,z) (after z-correction)", min1.pca.xyz);
+    Utils::Print(__FUNCTION__, "min2.(x,y,z) (after z-correction)", min2.pca.xyz);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return {min1, min2};
@@ -1238,7 +1240,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
 // - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds1)/dr2, d(ds2)/dr1
 std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine(const Particle& p) const {
 #if KF_DEBUG
-    std::cout << "-- started (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- started ({}) --", __FUNCTION__);
 #endif
     Result::Minimization min1;
     Result::Minimization min2;
@@ -1284,10 +1286,10 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     min2.pca.dir[1] = py02;
     min2.pca.dir[2] = pz02;
 #if KF_DEBUG
-    PrintValue(__FUNCTION__, "min1.ds", min1.ds);
-    PrintVector<3>(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
-    PrintValue(__FUNCTION__, "min2.ds", min2.ds);
-    PrintVector<3>(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
+    Utils::Print(__FUNCTION__, "min1.ds", min1.ds);
+    Utils::Print(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
+    Utils::Print(__FUNCTION__, "min2.ds", min2.ds);
+    Utils::Print(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
 #endif
 
     // handle derivatives //
@@ -1320,11 +1322,11 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
         min2.ds_dr[i] = da2_dr2 / detp - a2 * ddetp_dr2[i] / (detp * detp);
     }
 #if KF_DEBUG
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr", min1.ds_dr);
-    PrintVector<6>(__FUNCTION__, "min1.ds_dr1", min1.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr1", min2.ds_dr1);
-    PrintVector<6>(__FUNCTION__, "min2.ds_dr", min2.ds_dr);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "min1.ds_dr", min1.ds_dr);
+    Utils::Print(__FUNCTION__, "min1.ds_dr1", min1.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr1", min2.ds_dr1);
+    Utils::Print(__FUNCTION__, "min2.ds_dr", min2.ds_dr);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return {min1, min2};
@@ -1343,7 +1345,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
 // - `corr`  : correlation matrix = d(fP new)/d(r1)
 Result::Transport Particle::TransportBz(const Result::Minimization& min, double bz) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
     Result::Transport tpr;
 
@@ -1403,11 +1405,11 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
         }
     }
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "State", tpr.P);
-    PrintSymMatrix<8>(__FUNCTION__, "Cov", tpr.C);
-    PrintMatrix<6, 6>(__FUNCTION__, "Jacob", tpr.jacob);
-    PrintMatrix<6, 6>(__FUNCTION__, "Corr", tpr.corr);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "State", tpr.P);
+    Utils::Print(__FUNCTION__, "Cov", tpr.C);
+    Utils::Print(__FUNCTION__, "Jacob", tpr.jacob);
+    Utils::Print(__FUNCTION__, "Corr", tpr.corr);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return tpr;
@@ -1425,7 +1427,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
 // - `corr`  : correlation matrix = d(fP new)/d(r1)
 Result::Transport Particle::TransportLine(const Result::Minimization& min) const {
 #if KF_DEBUG
-    std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+    std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     Result::Transport tpr;
@@ -1477,11 +1479,11 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
         }
     }
 #if KF_DEBUG
-    PrintVector<8>(__FUNCTION__, "State", tpr.P);
-    PrintSymMatrix<8>(__FUNCTION__, "Cov", tpr.C);
-    PrintMatrix<6, 6>(__FUNCTION__, "Jacob", tpr.jacob);
-    PrintMatrix<6, 6>(__FUNCTION__, "Corr", tpr.corr);
-    std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+    Utils::Print(__FUNCTION__, "State", tpr.P);
+    Utils::Print(__FUNCTION__, "Cov", tpr.C);
+    Utils::Print(__FUNCTION__, "Jacob", tpr.jacob);
+    Utils::Print(__FUNCTION__, "Corr", tpr.corr);
+    std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
 
     return tpr;

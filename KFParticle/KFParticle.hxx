@@ -25,11 +25,12 @@
 
 #include <cmath>
 #include <cstddef>
-#include <iostream>
+#include <print>
 #include <utility>
 #include <vector>
 
 #include "KFParticle_Math.hxx"
+#include "KFParticle_Utils.hxx"
 
 namespace KF {
 
@@ -93,17 +94,18 @@ class alignas(32) Particle {
     Particle(const Vector<7> &p, const SymMatrix<7> &cov, int charge) { Initialize(p, cov, charge); }
     ~Particle() = default;
 
-    double X() const { return fP[0]; }     // return X coordinate of the particle
-    double Y() const { return fP[1]; }     // return Y coordinate of the particle
-    double Z() const { return fP[2]; }     // return Z coordinate of the particle
-    double Px() const { return fP[3]; }    // return X component of the momentum
-    double Py() const { return fP[4]; }    // return Y component of the momentum
-    double Pz() const { return fP[5]; }    // return Z component of the momentum
-    double E() const { return fP[6]; }     // return energy of the particle
-    double S() const { return fP[7]; }     // return dS=l/p, l - decay length, defined if production vertex is set
-    int Charge() const { return fQ; }      // return charge of the particle
-    double Chi2() const { return fChi2; }  // return Chi2 of the fit
-    int NDF() const { return fNDF; }       // return number of degrees of freedom
+    double X() const { return fP[0]; }                                    // return X coordinate of the particle
+    double Y() const { return fP[1]; }                                    // return Y coordinate of the particle
+    double Z() const { return fP[2]; }                                    // return Z coordinate of the particle
+    double Px() const { return fP[3]; }                                   // return X component of the momentum
+    double Py() const { return fP[4]; }                                   // return Y component of the momentum
+    double Pz() const { return fP[5]; }                                   // return Z component of the momentum
+    double E() const { return fP[6]; }                                    // return energy of the particle
+    double S() const { return fP[7]; }                                    // return dS=l/p, l - decay length, defined if production vertex is set
+    int Charge() const { return fQ; }                                     // return charge of the particle
+    double Chi2() const { return fChi2; }                                 // return Chi2 of the fit
+    int NDF() const { return fNDF; }                                      // return number of degrees of freedom
+    double Chi2NDF() const { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
 
     double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); };
     double P() const { return std::sqrt(P2()); };
@@ -175,7 +177,7 @@ class alignas(32) Particle {
     double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
     double GetCovariance(int i) const { return fC[i]; }                // return C[i] element of the covariance matrix in the lower triangular form
     double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
-    SymMatrix<6> Cov_6x6() const { return Slice<36, 21>(fC); }
+    SymMatrix<6> Cov_6x6() const { return Slice<8, 6>(fC); }
 
     void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
     void AddDaughter(const Particle &daughter, double bz) {
@@ -192,29 +194,15 @@ class alignas(32) Particle {
     void AddMassConstraint(double target_mass);
 
     void Print() {
-        std::cout << "(X,Y,Z,S)    = " << fP[0] << "    " << fP[1] << "    " << fP[2] << "    " << fP[7] << '\n';
-        std::cout << "(Px,Py,Pz,E) = " << fP[3] << "    " << fP[4] << "    " << fP[5] << "    " << fP[6] << '\n';
-        std::cout << "Mass         = " << Mass() << '\n';
-        std::cout << "Radius2D     = " << Radius2D() << '\n';
-        std::cout << "Chi2/NDF     = " << fChi2 << "/" << fNDF << '\n';
-        std::cout << "CovMatrix    = ";
-        size_t n_in_row{0};
-        size_t max_n_row{1};
-        for (size_t i{0}; i < 8 * 9 / 2; ++i) {
-            std::cout << fC[i];
-            ++n_in_row;
-            if (n_in_row == max_n_row) {
-                std::cout << '\n';
-                if (i + 1 < 8 * 9 / 2) std::cout << "               ";
-                n_in_row = 0;
-                ++max_n_row;
-            } else {
-                std::cout << "    ";
-            }
-        }
-        std::cout << "DCAxy_Dau      = " << GetDCAxy(0, 1) << '\n';
-        std::cout << "DCAxy_Neg      = " << GetDCAxy(0) << '\n';
-        std::cout << "DCAxy_Pos      = " << GetDCAxy(1) << '\n';
+        std::println(stdout, "(X,Y,Z,S)    = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[0], fP[1], fP[2], fP[7]);
+        std::println(stdout, "(Px,Py,Pz,E) = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[3], fP[4], fP[5], fP[6]);
+        std::println(stdout, "Mass         = {:13.6e}", Mass());
+        std::println(stdout, "Radius2D     = {:13.6e}", Radius2D());
+        std::println(stdout, "Chi2/NDF     = {:13.6e} / {} = {:13.6e}", fChi2, fNDF, Chi2NDF());
+        std::println(stdout, "CovMatrix    = {}", fC);
+        std::println(stdout, "DCAxy_Dau    = {:13.6e}", GetDCAxy(0, 1));
+        std::println(stdout, "DCAxy_Neg    = {:13.6e}", GetDCAxy(0));
+        std::println(stdout, "DCAxy_Pos    = {:13.6e}", GetDCAxy(1));
     }
 
    protected:
@@ -236,7 +224,7 @@ class alignas(32) Particle {
     // Note: it will modify the state of the current `KF::Particle`
     void Initialize(const Vector<6> &param, const SymMatrix<6> &cov, int charge, double mass) {
 #if KF_DEBUG
-        std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+        std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
         for (size_t i{0}; i < 6; ++i) fP[i] = param[i];
@@ -260,8 +248,8 @@ class alignas(32) Particle {
 
         fQ = charge;
 #if KF_DEBUG
-        PrintSymMatrix<8>(__FUNCTION__, "CovMatrix", fC);
-        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+        Utils::Print(__FUNCTION__, "CovMatrix", fC);
+        std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
     }
 
@@ -273,7 +261,7 @@ class alignas(32) Particle {
     // Note: it will modify the state of the current `KF::Particle`
     void Initialize(const Vector<7> &param, const SymMatrix<7> &cov, int charge) {
 #if KF_DEBUG
-        std::cout << "-- starting (" << __FUNCTION__ << ") --" << '\n';
+        std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
         for (size_t i{0}; i < 7; ++i) fP[i] = param[i];
         fP[7] = 0.;
@@ -281,7 +269,7 @@ class alignas(32) Particle {
         fC[35] = 1.;
         fQ = charge;
 #if KF_DEBUG
-        std::cout << "-- finished (" << __FUNCTION__ << ") --" << '\n';
+        std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
     }
 

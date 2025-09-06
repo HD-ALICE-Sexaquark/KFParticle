@@ -1,4 +1,5 @@
 #include <cmath>
+#include <print>
 
 #include "KFParticle.hxx"
 #include "KFParticle_Math.hxx"
@@ -43,63 +44,63 @@ int main() {
 
     // Composite Particle A (mass constraint OFF, vertex hypothesis OFF) //
 
-    std::cout << "===================================================================================" << '\n';
-    std::cout << "== START Composite Particle A (mass constraint OFF, vertex hypothesis OFF) START ==" << '\n';
-    std::cout << "===================================================================================" << '\n';
+    std::println(stdout, "===================================================================================");
+    std::println(stdout, "== START Composite Particle A (mass constraint OFF, vertex hypothesis OFF) START ==");
+    std::println(stdout, "===================================================================================");
     KF::Particle cpA;
     cpA.AddDaughter(p1, b_field);
     cpA.AddDaughter(p2, b_field);
     cpA.Print();
-    std::cout << "===================================================================================" << '\n';
-    std::cout << "== END   Composite Particle A (mass constraint OFF, vertex hypothesis OFF)   END ==" << '\n';
-    std::cout << "===================================================================================" << '\n';
+    std::println(stdout, "===================================================================================");
+    std::println(stdout, "== END   Composite Particle A (mass constraint OFF, vertex hypothesis OFF)   END ==");
+    std::println(stdout, "===================================================================================");
 
-    std::cout << '\n';
+    std::println(stdout);
 
     // Composite Particle B (mass constraint ON, vertex hypothesis OFF) //
 
-    std::cout << "==================================================================================" << '\n';
-    std::cout << "== START Composite Particle B (mass constraint ON, vertex hypothesis OFF) START ==" << '\n';
-    std::cout << "==================================================================================" << '\n';
+    std::println(stdout, "==================================================================================");
+    std::println(stdout, "== START Composite Particle B (mass constraint ON, vertex hypothesis OFF) START ==");
+    std::println(stdout, "==================================================================================");
     KF::Particle cpB;
     cpB.AddDaughter(p1, b_field);
     cpB.AddDaughter(p2, b_field);
     cpB.AddMassConstraint(k0s_mass);
     cpB.Print();
-    std::cout << "==================================================================================" << '\n';
-    std::cout << "== END   Composite Particle B (mass constraint ON, vertex hypothesis OFF)   END ==" << '\n';
-    std::cout << "==================================================================================" << '\n';
+    std::println(stdout, "==================================================================================");
+    std::println(stdout, "== END   Composite Particle B (mass constraint ON, vertex hypothesis OFF)   END ==");
+    std::println(stdout, "==================================================================================");
 
-    std::cout << '\n';
+    std::println(stdout);
 
     // Composite Particle C (mass constraint OFF, vertex hypothesis ON) //
 
-    std::cout << "==================================================================================" << '\n';
-    std::cout << "== START Composite Particle C (mass constraint OFF, vertex hypothesis ON) START ==" << '\n';
-    std::cout << "==================================================================================" << '\n';
+    std::println(stdout, "==================================================================================");
+    std::println(stdout, "== START Composite Particle C (mass constraint OFF, vertex hypothesis ON) START ==");
+    std::println(stdout, "==================================================================================");
     KF::Particle cpC;
     cpC.AddDaughter(p1, b_field);
     cpC.AddDaughter(p2, b_field);
     cpC.AddProductionVertex(vv0, cc0, b_field);
     cpC.Print();
-    std::cout << "==================================================================================" << '\n';
-    std::cout << "== END   Composite Particle C (mass constraint OFF, vertex hypothesis ON)   END ==" << '\n';
-    std::cout << "==================================================================================" << '\n';
+    std::println(stdout, "==================================================================================");
+    std::println(stdout, "== END   Composite Particle C (mass constraint OFF, vertex hypothesis ON)   END ==");
+    std::println(stdout, "==================================================================================");
 
-    std::cout << '\n';
+    std::println(stdout);
 
     // Composite Particle D (mass constraint ON, vertex hypothesis ON) //
 
-    std::cout << "=================================================================================" << '\n';
-    std::cout << "== START Composite Particle D (mass constraint ON, vertex hypothesis ON) START ==" << '\n';
-    std::cout << "=================================================================================" << '\n';
+    std::println(stdout, "=================================================================================");
+    std::println(stdout, "== START Composite Particle D (mass constraint ON, vertex hypothesis ON) START ==");
+    std::println(stdout, "=================================================================================");
     KF::Particle cpD;
     cpD.AddDaughter(p1, b_field);
     cpD.AddDaughter(p2, b_field);
     cpD.AddMassConstraint(k0s_mass);
     cpD.AddProductionVertex(vv0, cc0, b_field);
     cpD.Print();
-    std::cout << "=================================================================================" << '\n';
-    std::cout << "== END   Composite Particle D (mass constraint ON, vertex hypothesis ON)   END ==" << '\n';
-    std::cout << "=================================================================================" << '\n';
+    std::println(stdout, "=================================================================================");
+    std::println(stdout, "== END   Composite Particle D (mass constraint ON, vertex hypothesis ON)   END ==");
+    std::println(stdout, "=================================================================================");
 }

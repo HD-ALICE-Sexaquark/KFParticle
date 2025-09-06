@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15...3.31)
+cmake_minimum_required(VERSION 3.25...3.31)
 project(KFParticle LANGUAGES CXX)
 
 # prevent in-source builds #
@@ -10,11 +10,9 @@ endif()
 # c++ standard #
 
 set(CMAKE_CXX_EXTENSIONS OFF) # ensure -std=c++xx instead of -std=g++xx
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-set(CMAKE_CXX_FLAGS
-    "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wshadow -Wnon-virtual-dtor -march=native -mtune=native -O3 -DNDEBUG"
-)
+set(CMAKE_EXPORT_COMPILE_COMMANDS True)
 
 # enable lto #
 
@@ -32,20 +30,11 @@ endif()
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-macro(add_target_property _target _prop _value)
-  get_target_property(_oldprop "${_target}" ${_prop})
-  if(_oldprop)
-    set_target_properties("${_target}" PROPERTIES ${_prop}
-                                                  "${_oldprop} ${_value}")
-  else()
-    set_target_properties("${_target}" PROPERTIES ${_prop} "${_value}")
-  endif()
-endmacro()
-
 # some definitions #
 
 set(SOURCES KFParticle/KFParticle.cxx)
-set(HEADERS KFParticle/KFParticle.hxx KFParticle/KFParticle_Math.hxx)
+set(HEADERS KFParticle/KFParticle.hxx KFParticle/KFParticle_Math.hxx
+            KFParticle/KFParticle_Const.hxx KFParticle/KFParticle_Utils.hxx)
 
 # main target #
 
@@ -55,11 +44,17 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_compile_features(KFParticle PUBLIC cxx_std_17)
+
+# propagate c++23 to consumers
+target_compile_features(KFParticle PUBLIC cxx_std_23)
+target_compile_options(KFParticle PRIVATE -Wall -Wextra -Wshadow
+                                          -Wnon-virtual-dtor)
+target_compile_options(KFParticle PRIVATE -O3 -DNDEBUG -mtune=native
+                                          -march=native)
 
 option(KF_DEBUG "Print debug messages." OFF)
 if(KF_DEBUG)
-  add_target_property(KFParticle COMPILE_FLAGS "-DKF_DEBUG")
+  target_compile_definitions(KFParticle PUBLIC KF_DEBUG)
 endif(KF_DEBUG)
 
 # installation of library and headers #

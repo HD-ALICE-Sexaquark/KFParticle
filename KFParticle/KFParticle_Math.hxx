@@ -4,83 +4,20 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <iostream>
 #include <utility>
+
+#include "KFParticle_Const.hxx"
 
 namespace KF {
 
-namespace Const {
-constexpr double Kappa{0.000299792458};  // (GeV/c) / (kG/cm)
-constexpr double AbsAlmostZero{1.E-8};
-constexpr double BigNumber{1.E8};
-constexpr double Epsilon{1.E-6};
-}  // namespace Const
-
 template <size_t N>
-using Vector = std::array<double, N>;
+struct Vector : std::array<double, N> {};
 
 template <size_t N, size_t M>
-using Matrix = std::array<std::array<double, N>, M>;
+struct Matrix : std::array<std::array<double, N>, M> {};
 
-template <size_t N>
-using SymMatrix = std::array<double, N *(N + 1) / 2>;
-
-template <class S>
-static void PrintValue(std::string_view fcn_name, std::string_view name, const S arr) {
-    std::cout << "(" << fcn_name << ") " << name << " = " << arr << '\n';
-}
-
-template <size_t N>
-static void PrintVector(std::string_view fcn_name, std::string_view name, const Vector<N> &arr) {
-    std::cout << "(" << fcn_name << ") " << name << " = ";
-    for (size_t i{0}; i < N; ++i) {
-        std::cout << arr[i];
-        if (i + 1 < N)
-            std::cout << "    ";
-        else
-            std::cout << '\n';
-    }
-}
-
-template <size_t N>
-static void PrintSymMatrix(std::string_view fcn_name, std::string_view name, const SymMatrix<N> &arr) {
-    std::cout << "(" << fcn_name << ") " << name << " =\n";
-    size_t n_in_row{0};
-    size_t max_n_row{1};
-    for (size_t i{0}; i < N * (N + 1) / 2; ++i) {
-        std::cout << arr[i];
-        ++n_in_row;
-        if (n_in_row == max_n_row) {
-            std::cout << '\n';
-            n_in_row = 0;
-            ++max_n_row;
-        } else {
-            std::cout << "    ";
-        }
-    }
-}
-
-template <size_t N, size_t M>
-static void PrintMatrix(std::string_view fcn_name, std::string_view name, const Matrix<N, M> &arr) {
-    std::cout << "(" << fcn_name << ") " << name << " =\n";
-    for (size_t i{0}; i < N; ++i) {
-        for (size_t j{0}; j < M; ++j) {
-            std::cout << arr[i][j];
-            if (j + 1 < M)
-                std::cout << "    ";
-            else
-                std::cout << '\n';
-        }
-    }
-}
-
-template <size_t N>
-static void PrintSplitMatrix(std::string_view fcn_name, std::string_view name, const Vector<N> &arr1, const Vector<N> &arr2, const Vector<N> &arr3) {
-    std::cout << "(" << fcn_name << ") " << name << " =\n";
-    for (size_t i{0}; i < N; ++i) {
-        std::cout << "  " << arr1[i] << "    " << arr2[i] << "    " << arr3[i] << '\n';
-    }
-}
+template <size_t K>
+struct SymMatrix : std::array<double, K *(K + 1) / 2> {};
 
 // Convert a pair of indices {i,j} of the covariance matrix to one index corresponding to the triangular form
 template <typename D>
@@ -94,6 +31,16 @@ inline Vector<M> Slice(const Vector<N> &in, size_t begin_i = 0) {
     for (size_t i{0}; i < M; ++i) {
         const size_t src{begin_i + i};
         if (src < N) out[i] = in[src];
+    }
+    return out;
+}
+
+template <size_t K, size_t L>
+inline SymMatrix<L> Slice(const SymMatrix<K> &in, size_t begin_i = 0) {
+    SymMatrix<L> out{};
+    for (size_t i{0}; i < L * (L + 1) / 2; ++i) {
+        const size_t src{begin_i + i};
+        if (src < K) out[i] = in[src];
     }
     return out;
 }
