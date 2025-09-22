@@ -11,13 +11,13 @@
 namespace KF {
 
 template <size_t N>
-struct Vector : std::array<double, N> {};
+struct alignas(KF_SIMD_ALIGN) Vector : std::array<double, N> {};
 
 template <size_t N, size_t M>
-struct Matrix : std::array<std::array<double, N>, M> {};
+struct alignas(KF_SIMD_ALIGN) Matrix : std::array<std::array<double, N>, M> {};
 
 template <size_t K>
-struct SymMatrix : std::array<double, K *(K + 1) / 2> {};
+struct alignas(KF_SIMD_ALIGN) SymMatrix : std::array<double, K *(K + 1) / 2> {};
 
 // Convert a pair of indices {i,j} of the covariance matrix to one index corresponding to the triangular form
 template <typename D>

@@ -26,7 +26,9 @@
 #include "KFParticle.hxx"
 #include "KFParticle_Const.hxx"
 #include "KFParticle_Math.hxx"
+#if KF_DEBUG
 #include "KFParticle_Utils.hxx"
+#endif
 
 namespace KF {
 

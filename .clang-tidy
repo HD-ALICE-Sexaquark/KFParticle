@@ -7,7 +7,6 @@ Checks: "*,
   -google-*,
   -llvm*,
   -modernize-use-trailing-return-type,
-  -modernize-use-nodiscard,
   -zircon-*,
   -readability-else-after-return,
   -readability-static-accessed-through-instance,
@@ -23,8 +22,7 @@ Checks: "*,
   -bugprone-easily-swappable-parameters,
   -hicpp-braces-around-statements,
   -cppcoreguidelines-non-private-member-variables-in-classes,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
-  -cppcoreguidelines-init-variables,"
+  -cppcoreguidelines-pro-bounds-constant-array-index"
 WarningsAsErrors: ""
 HeaderFilterRegex: ""
 FormatStyle: 'file'

@@ -34,13 +34,13 @@
 
 namespace KF {
 
-struct alignas(32) PCA {
+struct alignas(KF_SIMD_ALIGN) PCA {
     PCA() = default;
     PCA(double x, double y, double z, double px, double py, double pz) : xyz{x, y, z}, dir{px, py, pz} {};
     Vector<3> xyz{};
     Vector<3> dir{};
 };
-struct alignas(32) Cache {
+struct alignas(KF_SIMD_ALIGN) Cache {
     PCA pca;
     double theta{0.};
     double sin{0.};
@@ -51,24 +51,24 @@ struct alignas(32) Cache {
 };
 
 namespace Result {
-struct alignas(32) Minimization : Cache {
+struct alignas(KF_SIMD_ALIGN) Minimization : Cache {
     Vector<6> ds_dr{};
     Vector<6> ds_dr1{};
 };
-struct alignas(32) Transport {
+struct alignas(KF_SIMD_ALIGN) Transport {
     Matrix<6, 6> jacob{};
     Matrix<6, 6> corr{};
     SymMatrix<8> C{};
     Vector<8> P{};
 };
-struct alignas(32) Measurement {
+struct alignas(KF_SIMD_ALIGN) Measurement {
     SymMatrix<8> C1{};
     SymMatrix<8> C2{};
     Matrix<3, 3> D{};
     Vector<8> P1{};
     Vector<8> P2{};
 };
-struct alignas(32) MassConstraint {
+struct alignas(KF_SIMD_ALIGN) MassConstraint {
     SymMatrix<8> C{};
     Matrix<7, 7> jacob{};
     Vector<8> P{};
@@ -82,7 +82,7 @@ struct alignas(32) MassConstraint {
 // @version 1.0
 //
 // Contains the main mathematics of the KFParticle.
-class alignas(32) Particle {
+class alignas(KF_SIMD_ALIGN) Particle {
    public:
     Particle(const Particle &) = default;
     Particle(Particle &&) = delete;
@@ -94,48 +94,48 @@ class alignas(32) Particle {
     Particle(const Vector<7> &p, const SymMatrix<7> &cov, int charge) { Initialize(p, cov, charge); }
     ~Particle() = default;
 
-    double X() const { return fP[0]; }                                    // return X coordinate of the particle
-    double Y() const { return fP[1]; }                                    // return Y coordinate of the particle
-    double Z() const { return fP[2]; }                                    // return Z coordinate of the particle
-    double Px() const { return fP[3]; }                                   // return X component of the momentum
-    double Py() const { return fP[4]; }                                   // return Y component of the momentum
-    double Pz() const { return fP[5]; }                                   // return Z component of the momentum
-    double E() const { return fP[6]; }                                    // return energy of the particle
-    double S() const { return fP[7]; }                                    // return dS=l/p, l - decay length, defined if production vertex is set
-    int Charge() const { return fQ; }                                     // return charge of the particle
-    double Chi2() const { return fChi2; }                                 // return Chi2 of the fit
-    int NDF() const { return fNDF; }                                      // return number of degrees of freedom
-    double Chi2NDF() const { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
+    [[nodiscard]] double X() const noexcept { return fP[0]; }     // return X coordinate of the particle
+    [[nodiscard]] double Y() const noexcept { return fP[1]; }     // return Y coordinate of the particle
+    [[nodiscard]] double Z() const noexcept { return fP[2]; }     // return Z coordinate of the particle
+    [[nodiscard]] double Px() const noexcept { return fP[3]; }    // return X component of the momentum
+    [[nodiscard]] double Py() const noexcept { return fP[4]; }    // return Y component of the momentum
+    [[nodiscard]] double Pz() const noexcept { return fP[5]; }    // return Z component of the momentum
+    [[nodiscard]] double E() const noexcept { return fP[6]; }     // return energy of the particle
+    [[nodiscard]] double S() const noexcept { return fP[7]; }     // return dS=l/p, l - decay length, defined if production vertex is set
+    [[nodiscard]] int Charge() const noexcept { return fQ; }      // return charge of the particle
+    [[nodiscard]] double Chi2() const noexcept { return fChi2; }  // return Chi2 of the fit
+    [[nodiscard]] int NDF() const noexcept { return fNDF; }       // return number of degrees of freedom
+    [[nodiscard]] double Chi2NDF() const { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
 
-    double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); };
-    double P() const { return std::sqrt(P2()); };
-    double Pt() const { return Math::Norm<2>({Px(), Py()}); };
-    double Mass() const {
+    [[nodiscard]] double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); };
+    [[nodiscard]] double P() const { return std::sqrt(P2()); };
+    [[nodiscard]] double Pt() const { return Math::Norm<2>({Px(), Py()}); };
+    [[nodiscard]] double Mass() const {
         double mass2{E() * E() - P2()};
         if (mass2 < 0.) return -1.;  // protection
         return std::sqrt(mass2);
     }
 
     // Pseudorapidity.
-    double Eta() const { return std::atanh(Pz() / P() + Const::Epsilon); };
+    [[nodiscard]] double Eta() const { return std::atanh(Pz() / P() + Const::Epsilon); };
 
     // Rapidity.
-    double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz() + Const::Epsilon)) / 2.; };
+    [[nodiscard]] double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz() + Const::Epsilon)) / 2.; };
 
     // Radius (cm) in cylindrical coordinates.
-    double Radius2D() const { return Math::Norm<2>({X(), Y()}); };
+    [[nodiscard]] double Radius2D() const { return Math::Norm<2>({X(), Y()}); };
 
     // Radius (cm) in spherical coordinates.
-    double Radius3D() const { return Math::Norm<3>({X(), Y(), Z()}); };
+    [[nodiscard]] double Radius3D() const { return Math::Norm<3>({X(), Y(), Z()}); };
 
     // Return point of closest approach (PCA) of a certain daughter after minimization.
-    PCA GetPCA(size_t index_daughter) const {
+    [[nodiscard]] PCA GetPCA(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return {0., 0., 0., 0., 0., 0.};  // protection
         return fPCAs[index_daughter];
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter and fitted vertex.
-    double GetDCA(size_t index_daughter) const {
+    [[nodiscard]] double GetDCA(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return -1.;  // protection
         Vector<3> diff{};
         for (size_t i{0}; i < 3; ++i) {
@@ -145,7 +145,7 @@ class alignas(32) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter1 and added daughter2.
-    double GetDCA(size_t index_daughter1, size_t index_daughter2) const {
+    [[nodiscard]] double GetDCA(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
         Vector<3> diff{};
         for (size_t i{0}; i < 3; ++i) {
@@ -155,7 +155,7 @@ class alignas(32) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter and fitted vertex.
-    double GetDCAxy(size_t index_daughter) const {
+    [[nodiscard]] double GetDCAxy(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return -1.;  // protection
         Vector<2> diff{};
         for (size_t i{0}; i < 2; ++i) {
@@ -165,7 +165,7 @@ class alignas(32) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter1 and added daughter2.
-    double GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
+    [[nodiscard]] double GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
         Vector<2> diff{};
         for (size_t i{0}; i < 2; ++i) {
@@ -174,10 +174,10 @@ class alignas(32) Particle {
         return Math::Norm<2>(diff);
     }
 
-    double GetParameter(int i) const { return fP[i]; }                 // return P[i] parameter
-    double GetCovariance(int i) const { return fC[i]; }                // return C[i] element of the covariance matrix in the lower triangular form
-    double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
-    SymMatrix<6> Cov_6x6() const { return Slice<8, 6>(fC); }
+    [[nodiscard]] double GetParameter(int i) const { return fP[i]; }   // return P[i] parameter
+    [[nodiscard]] double GetCovariance(int i) const { return fC[i]; }  // return C[i] element of the covariance matrix in the lower triangular form
+    [[nodiscard]] double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
+    [[nodiscard]] SymMatrix<6> Cov_6x6() const { return Slice<8, 6>(fC); }
 
     void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
     void AddDaughter(const Particle &daughter, double bz) {
@@ -273,29 +273,29 @@ class alignas(32) Particle {
 #endif
     }
 
-    Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
+    [[nodiscard]] Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
-    Result::Minimization MinimizeLinePoint(const Vector<3> &v) const;
-    Result::Minimization MinimizeHelixPoint(const Vector<3> &v, double bz) const;
-    Result::Minimization Minimize(const Vector<3> &v, double bz = 0) const {
+    [[nodiscard]] Result::Minimization MinimizeLinePoint(const Vector<3> &v) const;
+    [[nodiscard]] Result::Minimization MinimizeHelixPoint(const Vector<3> &v, double bz) const;
+    [[nodiscard]] Result::Minimization Minimize(const Vector<3> &v, double bz = 0) const {
         if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
             return MinimizeLinePoint(v);
         }
         return MinimizeHelixPoint(v, bz);
     }
 
-    std::pair<Result::Minimization, Result::Minimization> MinimizeLineLine(const Particle &p) const;
-    std::pair<Result::Minimization, Result::Minimization> MinimizeHelixHelix(const Particle &p, double bz) const;
-    std::pair<Result::Minimization, Result::Minimization> Minimize(const Particle &p, double bz = 0.) const {
+    [[nodiscard]] std::pair<Result::Minimization, Result::Minimization> MinimizeLineLine(const Particle &p) const;
+    [[nodiscard]] std::pair<Result::Minimization, Result::Minimization> MinimizeHelixHelix(const Particle &p, double bz) const;
+    [[nodiscard]] std::pair<Result::Minimization, Result::Minimization> Minimize(const Particle &p, double bz = 0.) const {
         if ((std::abs(fQ) < Const::AbsAlmostZero && std::abs(p.fQ) < Const::AbsAlmostZero) || std::abs(bz) < Const::AbsAlmostZero) {
             return MinimizeLineLine(p);
         }
         return MinimizeHelixHelix(p, bz);
     }
 
-    Result::Transport TransportBz(const Result::Minimization &min, double bz) const;
-    Result::Transport TransportLine(const Result::Minimization &min) const;
-    Result::Transport Transport(const Result::Minimization &min, double bz = 0.) const {
+    [[nodiscard]] Result::Transport TransportBz(const Result::Minimization &min, double bz) const;
+    [[nodiscard]] Result::Transport TransportLine(const Result::Minimization &min) const;
+    [[nodiscard]] Result::Transport Transport(const Result::Minimization &min, double bz = 0.) const {
         if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
             return TransportLine(min);
         }

@@ -13,7 +13,7 @@ A fork of [KFParticle](https://github.com/alisw/KFParticle), with:
 
 ## Requirements
 
-- CMake (v3.15 or higher)
+- CMake (v3.25 or higher)
 - C++ compiler compatible with C++23
 
 ## Build

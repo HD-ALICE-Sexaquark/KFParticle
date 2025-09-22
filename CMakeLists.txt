@@ -50,7 +50,7 @@ target_compile_features(KFParticle PUBLIC cxx_std_23)
 target_compile_options(KFParticle PRIVATE -Wall -Wextra -Wshadow
                                           -Wnon-virtual-dtor)
 target_compile_options(KFParticle PRIVATE -O3 -DNDEBUG -mtune=native
-                                          -march=native)
+                                          -march=native -ffp-contract=fast)
 
 option(KF_DEBUG "Print debug messages." OFF)
 if(KF_DEBUG)
