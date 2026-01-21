@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.25...3.31)
-project(KFParticle LANGUAGES CXX)
+project(
+  KFParticle
+  VERSION 26.1.21
+  LANGUAGES CXX)
 
 # prevent in-source builds #
 
@@ -7,16 +10,22 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "You don't want to configure in the source directory!")
 endif()
 
-# c++ standard #
+# C++ standard #
 
 set(CMAKE_CXX_EXTENSIONS OFF) # ensure -std=c++xx instead of -std=g++xx
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS True)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # remove -fmodules-ts flags
 
-# enable lto #
+# includes and macros #
 
 include(CheckIPOSupported)
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs) # GNU-like installation paths, e.g. lib/, include/, etc
+
+# enable LTO #
+
 check_ipo_supported(RESULT LTO_SUPPORTED)
 if(LTO_SUPPORTED)
   message(STATUS "LTO/IPO is supported")
@@ -24,11 +33,6 @@ if(LTO_SUPPORTED)
 else()
   message(STATUS "LTO/IPO is not supported")
 endif()
-
-# includes and macros #
-
-include(CMakePackageConfigHelpers)
-include(GNUInstallDirs)
 
 # some definitions #
 
@@ -47,15 +51,28 @@ target_include_directories(
 
 # propagate c++23 to consumers
 target_compile_features(KFParticle PUBLIC cxx_std_23)
-target_compile_options(KFParticle PRIVATE -Wall -Wextra -Wshadow
-                                          -Wnon-virtual-dtor)
-target_compile_options(KFParticle PRIVATE -O3 -DNDEBUG -mtune=native
-                                          -march=native -ffp-contract=fast)
+target_compile_options(
+  KFParticle PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wpedantic
+                     -Wconversion)
 
-option(KF_DEBUG "Print debug messages." OFF)
-if(KF_DEBUG)
-  target_compile_definitions(KFParticle PUBLIC KF_DEBUG)
-endif(KF_DEBUG)
+# show available configs #
+
+message("-- Available configurations: ${CMAKE_CONFIGURATION_TYPES}")
+
+# apply config #
+
+target_compile_options(
+  KFParticle
+  PRIVATE $<$<CONFIG:Release>:
+          -O3
+          -DNDEBUG
+          -ffp-contract=fast
+          -mtune=native
+          -march=native>
+          $<$<CONFIG:Debug>:
+          -O0
+          -g>)
+target_compile_definitions(KFParticle PUBLIC $<$<CONFIG:Debug>:KF_DEBUG>)
 
 # installation of library and headers #
 

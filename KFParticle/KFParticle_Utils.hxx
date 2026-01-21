@@ -1,8 +1,8 @@
-#ifndef KFPARTICLE_UTILS_HXX
-#define KFPARTICLE_UTILS_HXX
+#pragma once
 
 #include <cstddef>
 #include <format>
+#include <optional>
 #include <print>
 #include <string_view>
 
@@ -10,7 +10,9 @@
 
 template <size_t N>
 struct std::formatter<KF::Vector<N>> {
+
     constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
+
     auto format(const KF::Vector<N> &vec, std::format_context &ctx) const {
         auto out = ctx.out();
         out = std::format_to(out, "(");
@@ -25,7 +27,9 @@ struct std::formatter<KF::Vector<N>> {
 
 template <size_t K>
 struct std::formatter<KF::SymMatrix<K>> {
+
     constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
+
     auto format(const KF::SymMatrix<K> &arr, std::format_context &ctx) const {
         auto out = ctx.out();
         out = std::format_to(out, "\n");
@@ -48,7 +52,9 @@ struct std::formatter<KF::SymMatrix<K>> {
 
 template <size_t N, size_t M>
 struct std::formatter<KF::Matrix<N, M>> {
+
     constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
+
     auto format(const KF::Matrix<N, M> &arr, std::format_context &ctx) const {
         auto out = ctx.out();
         out = std::format_to(out, "\n");
@@ -65,6 +71,22 @@ struct std::formatter<KF::Matrix<N, M>> {
     }
 };
 
+template <typename T>
+    requires std::formattable<T, char>
+struct std::formatter<std::optional<T>> {
+    std::formatter<T> underlying_formatter;
+    static constexpr std::string_view null_str = "N/A";
+
+    constexpr auto parse(std::format_parse_context &ctx) { return underlying_formatter.parse(ctx); }
+
+    auto format(const std::optional<T> &opt, std::format_context &ctx) const {
+        if (opt.has_value()) {
+            return underlying_formatter.format(*opt, ctx);
+        }
+        return std::format_to(ctx.out(), "{}", null_str);
+    }
+};
+
 namespace KF::Utils {
 
 [[maybe_unused]] static void PrintDouble(std::string_view fcn_name, std::string_view name, double val) {
@@ -76,14 +98,4 @@ static void Print(std::string_view fcn_name, std::string_view name, const S &obj
     std::println(stdout, "({}) {} = {}", fcn_name, name, obj);
 }
 
-template <size_t N>
-static void PrintSplitMatrix(std::string_view fcn_name, std::string_view name, const Vector<N> &arr1, const Vector<N> &arr2, const Vector<N> &arr3) {
-    std::println(stdout, "({}) {} = ", fcn_name, name);
-    for (size_t i{0}; i < N; ++i) {
-        std::println(stdout, "{:13.6e}   {:13.6e}   {:13.6e}", arr1[i], arr2[i], arr3[i]);
-    }
-}
-
 }  // namespace KF::Utils
-
-#endif  // KFPARTICLE_UTILS_HXX

@@ -21,6 +21,7 @@
  */
 
 #include <algorithm>
+#include <limits>
 #include <tuple>
 
 #include "KFParticle.hxx"
@@ -62,52 +63,31 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
         Utils::Print(__FUNCTION__, "F3", tpr2.corr);
         Utils::Print(__FUNCTION__, "F4", tpr2.jacob);
 #endif
-        SymMatrix<6> V0Tmp{Math::MultQSQt<6>(tpr1.corr, daughter.Cov_6x6())};
-        SymMatrix<6> V1Tmp{Math::MultQSQt<6>(tpr2.corr, Cov_6x6())};
+
+        SymMatrix<6> V0Tmp{Math::MultiplyQSQT(tpr1.corr, Math::Slice<8, 6>(daughter.fC))};
+        SymMatrix<6> V1Tmp{Math::MultiplyQSQT(tpr2.corr, Math::Slice<8, 6>(fC))};
 #if KF_DEBUG
         Utils::Print(__FUNCTION__, "V0Tmp", V0Tmp);
         Utils::Print(__FUNCTION__, "V1Tmp", V1Tmp);
 #endif
 
-        Result::Measurement meas{.C1 = tpr1.C, .C2 = tpr2.C, .D = Matrix<3, 3>{}, .P1 = tpr1.P, .P2 = tpr2.P};
+        Result::Measurement meas{tpr1.P, tpr2.P, tpr1.C, tpr2.C};
 
         for (size_t iC{0}; iC < 21; ++iC) {
             meas.C1[iC] += V0Tmp[iC];
             meas.C2[iC] += V1Tmp[iC];
         }
 
-        Matrix<6, 6> C1F1T{};
-        for (size_t i{0}; i < 6; ++i) {
-            for (size_t j{0}; j < 6; ++j) {
-                for (size_t k{0}; k < 6; ++k) {
-                    C1F1T[i][j] += fC[IJ(i, k)] * tpr1.jacob[j][k];
-                }
-            }
-        }
-        Matrix<6, 6> F3C1F1T{};
-        for (size_t i{0}; i < 6; ++i) {
-            for (size_t j{0}; j < 6; ++j) {
-                for (size_t k{0}; k < 6; ++k) {
-                    F3C1F1T[i][j] += tpr2.corr[i][k] * C1F1T[k][j];
-                }
-            }
-        }
-        Matrix<6, 6> C2F2T{};
-        for (size_t i{0}; i < 6; ++i) {
-            for (size_t j{0}; j < 6; ++j) {
-                for (size_t k{0}; k < 6; ++k) {
-                    C2F2T[i][j] += daughter.fC[IJ(i, k)] * tpr1.corr[j][k];
-                }
-            }
-        }
-        for (size_t i{0}; i < 3; ++i) {
-            for (size_t j{0}; j < 3; ++j) {
-                meas.D[i][j] = F3C1F1T[i][j];
-                for (size_t k{0}; k < 6; ++k) {
-                    meas.D[i][j] += tpr2.jacob[i][k] * C2F2T[k][j];
-                }
-            }
-        }
+        Matrix<6, 6> C1F1T{Math::MultiplySymmWithNonSymm(Math::Slice<8, 6>(fC), Math::Transpose(tpr1.jacob))};  // = C1 x F1^T
+
+        Matrix<6, 6> F3C1F1T{Math::MultiplyMatrices(tpr2.corr, C1F1T)};  // = F3 x C1 x F1^T
+
+        Matrix<6, 6> C2F2T{Math::MultiplySymmWithNonSymm(Math::Slice<8, 6>(daughter.fC), Math::Transpose(tpr1.corr))};  // = C2 x F2^T
+
+        Matrix<6, 6> F4C2F2T{Math::MultiplyMatrices(tpr2.jacob, C2F2T)};  // = F4 x C2 x F2^T
+
+        meas.D = Math::Slice<6, 6, 3, 3>(Math::AddMatrices(F3C1F1T, F4C2F2T));
+
 #if KF_DEBUG
         Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
         Utils::Print(__FUNCTION__, "meas.P2", meas.P2);
@@ -127,33 +107,18 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
     // >> transport to vertex //
     auto min2 = daughter.Minimize({fP[0], fP[1], fP[2]}, bz);
     auto tpr2 = daughter.Transport(min2, bz);
-    Result::Measurement meas{.C1 = fC, .C2 = tpr2.C, .D = Matrix<3, 3>{}, .P1 = fP, .P2 = tpr2.P};
+    Result::Measurement meas{fP, tpr2.P, fC, tpr2.C};
 
-    Matrix<3, 6> VFT{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 6; ++j) {
-            for (size_t k{0}; k < 3; ++k) {
-                VFT[i][j] += fC[IJ(i, k)] * tpr2.jacob[j][k];
-            }
-        }
-    }
+    Matrix<3, 6> VFT{Math::MultiplySymmWithNonSymm(              //
+        Math::Slice<8, 3>(fC),                                   //
+        Math::Transpose(Math::Slice<6, 6, 6, 3>(tpr2.jacob)))};  // = V x F^T
 
-    Matrix<6, 6> FVFT{};
-    for (size_t i{0}; i < 6; ++i) {
-        for (size_t j{0}; j < 6; ++j) {
-            for (size_t k{0}; k < 3; ++k) {
-                FVFT[i][j] += tpr2.jacob[i][k] * VFT[k][j];
-            }
-        }
-    }
+    Matrix<6, 6> FVFT{Math::MultiplyMatrices(Math::Slice<6, 6, 6, 3>(tpr2.jacob), VFT)};  // = F x V x F^T
 
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) {
-                meas.D[i][j] += fC[IJ(j, k)] * tpr2.jacob[i][k];
-            }
-        }
-    }
+    meas.D = Math::Transpose(           //
+        Math::MultiplySymmWithNonSymm(  //
+            Math::Slice<8, 3>(fC),      //
+            Math::Transpose(Math::Slice<6, 6, 3, 3>(tpr2.jacob))));
 
     meas.C2[0] += FVFT[0][0];
     meas.C2[1] += FVFT[1][0];
@@ -194,16 +159,16 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     fPCAs.emplace_back(meas.P1[0], meas.P1[1], meas.P1[2], meas.P1[3], meas.P1[4], meas.P1[5]);
     fPCAs.emplace_back(meas.P2[0], meas.P2[1], meas.P2[2], meas.P2[3], meas.P2[4], meas.P2[5]);
 
-    SymMatrix<3> mS{meas.C1[0] + meas.C2[0],                           //
-                    meas.C1[1] + meas.C2[1], meas.C1[2] + meas.C2[2],  //
-                    meas.C1[3] + meas.C2[3], meas.C1[4] + meas.C2[4], meas.C1[5] + meas.C2[5]};
-    Math::InvertCholesky3(mS);
+    SymMatrix<3> mS_in{Math::AddMatrices(Math::Slice<8, 3>(meas.C1), Math::Slice<8, 3>(meas.C2))};
+    SymMatrix<3> mS{Math::InvertCholesky3(mS_in)};
+
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
     Utils::Print(__FUNCTION__, "meas.C1", meas.C1);
     Utils::Print(__FUNCTION__, "meas.P2", meas.P2);
     Utils::Print(__FUNCTION__, "meas.C2", meas.C2);
     Utils::Print(__FUNCTION__, "meas.D", meas.D);
+    Utils::Print(__FUNCTION__, "mS_in", mS_in);
     Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
@@ -218,7 +183,7 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 
     // update current particle state //
 
-    for (size_t i{0}; i < 8; ++i) fP[i] = meas.P1[i];
+    fP = meas.P1;
     for (size_t i{0}; i < 28; ++i) fC[i] = meas.C1[i];
 
     // add daughter's momentum to particle momentum //
@@ -249,64 +214,65 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     // New estimation of the vertex position r += K*zeta
     // New covariance matrix C -= K*(mCH')'
 
-    Vector<7> mCHt0{
-        meas.C1[0], meas.C1[1], meas.C1[3], meas.C1[6] - meas.C2[6], meas.C1[10] - meas.C2[10], meas.C1[15] - meas.C2[15], meas.C1[21] - meas.C2[21]};
-    Vector<7> mCHt1{
-        meas.C1[1], meas.C1[2], meas.C1[4], meas.C1[7] - meas.C2[7], meas.C1[11] - meas.C2[11], meas.C1[16] - meas.C2[16], meas.C1[22] - meas.C2[22]};
-    Vector<7> mCHt2{
-        meas.C1[3], meas.C1[4], meas.C1[5], meas.C1[8] - meas.C2[8], meas.C1[12] - meas.C2[12], meas.C1[17] - meas.C2[17], meas.C1[23] - meas.C2[23]};
+    // Build mCHt as a 7x3 matrix (each row i, column j)
+    Matrix<7, 3> mCHt{};
+    mCHt[0][0] = meas.C1[0];
+    mCHt[0][1] = meas.C1[1];
+    mCHt[0][2] = meas.C1[3];
+    mCHt[1][0] = meas.C1[1];
+    mCHt[1][1] = meas.C1[2];
+    mCHt[1][2] = meas.C1[4];
+    mCHt[2][0] = meas.C1[3];
+    mCHt[2][1] = meas.C1[4];
+    mCHt[2][2] = meas.C1[5];
+    mCHt[3][0] = meas.C1[6] - meas.C2[6];
+    mCHt[3][1] = meas.C1[7] - meas.C2[7];
+    mCHt[3][2] = meas.C1[8] - meas.C2[8];
+    mCHt[4][0] = meas.C1[10] - meas.C2[10];
+    mCHt[4][1] = meas.C1[11] - meas.C2[11];
+    mCHt[4][2] = meas.C1[12] - meas.C2[12];
+    mCHt[5][0] = meas.C1[15] - meas.C2[15];
+    mCHt[5][1] = meas.C1[16] - meas.C2[16];
+    mCHt[5][2] = meas.C1[17] - meas.C2[17];
+    mCHt[6][0] = meas.C1[21] - meas.C2[21];
+    mCHt[6][1] = meas.C1[22] - meas.C2[22];
+    mCHt[6][2] = meas.C1[23] - meas.C2[23];
 
-    Vector<7> k0;
-    Vector<7> k1;
-    Vector<7> k2;
+    // K (7x3) = mCHt (7x3) × S (3x3 symmetric)
+    Matrix<7, 3> mK{Math::MultiplyNonSymmWithSymm(mCHt, mS)};
+
+    // fP += K × zeta
     for (size_t i{0}; i < 7; ++i) {
-        k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
-        k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
-        k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
-    }
-
-    for (size_t i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * zeta[0] + k1[i] * zeta[1] + k2[i] * zeta[2];
-
-    for (size_t i{0}, k{0}; i < 7; ++i) {
-        for (size_t j{0}; j <= i; ++j, ++k) {
-            fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
+        for (size_t j{0}; j < 3; ++j) {
+            fP[i] += mK[i][j] * zeta[j];
         }
     }
+
+    // fC -= K × mCHt^T  (only lower triangle)
+    for (size_t i{0}, idx{0}; i < 7; ++i) {
+        for (size_t j{0}; j <= i; ++j, ++idx) {
+            for (size_t k{0}; k < 3; ++k) {
+                fC[idx] -= mK[i][k] * mCHt[j][k];
+            }
+        }
+    }
+
 #if KF_DEBUG
-    Utils::PrintSplitMatrix<7>(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    Utils::PrintSplitMatrix<7>(__FUNCTION__, "KGain", k0, k1, k2);
+    Utils::Print(__FUNCTION__, "mCHt", mCHt);
+    Utils::Print(__FUNCTION__, "mK", mK);
     Utils::Print(__FUNCTION__, "fP (after Kalman gain)", fP);
     Utils::Print(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
     // do something else? //
 
-    Matrix<3, 3> K{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) K[i][j] += meas.C1[IJ(i, k)] * mS[IJ(k, j)];
-        }
-    }
+    Matrix<3, 3> K{Math::MultiplySymmetricMatrices(Math::Slice<8, 3>(meas.C1), mS)};
 
-    Matrix<3, 3> K2;
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
-        K2[i][i] += 1.;
-    }
+    Matrix<3, 3> K2{Math::AddMatrices(Math::Identity<3>(), Math::Transpose(K), 1., -1.)};
 
-    Matrix<3, 3> A{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) A[i][j] += meas.D[i][k] * K2[k][j];
-        }
-    }
+    Matrix<3, 3> A{Math::MultiplyMatrices(meas.D, K2)};
 
-    Matrix<3, 3> M{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
-        }
-    }
+    Matrix<3, 3> M{Math::MultiplyMatrices(K, A)};
 
     fC[0] += 2. * M[0][0];
     fC[1] += M[0][1] + M[1][0];
@@ -357,28 +323,19 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 
     auto tpr = Transport(min, bz);
 
-    SymMatrix<3> CTmp{Math::MultQSQt(Slice<6, 6, 3, 3>(tpr.corr), prod_cov)};
+    SymMatrix<3> CTmp{Math::MultiplyQSQT(Math::Slice<6, 6, 3, 3>(tpr.corr), prod_cov)};
 
-    SymMatrix<3> measC{};
-    for (size_t iC{0}; iC < 6; ++iC) measC[iC] = tpr.C[iC] + CTmp[iC];
+    SymMatrix<3> measC{Math::AddMatrices(Math::Slice<8, 3>(tpr.C), CTmp)};
 
-    Matrix<3, 3> D{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) {
-                D[i][j] += prod_cov[IJ(j, k)] * tpr.corr[i][k];
-            }
-        }
-    }
+    Matrix<3, 3> D{Math::Transpose(Math::MultiplySymmWithNonSymm(prod_cov, Math::Transpose(Math::Slice<6, 6, 3, 3>(tpr.corr))))};
 
-    SymMatrix<3> mS{measC[0] + prod_cov[0],                          //
-                    measC[1] + prod_cov[1], measC[2] + prod_cov[2],  //
-                    measC[3] + prod_cov[3], measC[4] + prod_cov[4], measC[5] + prod_cov[5]};
-    Math::InvertCholesky3(mS);
+    SymMatrix<3> mS_in{Math::AddMatrices(measC, prod_cov)};
+    SymMatrix<3> mS{Math::InvertCholesky3(mS_in)};
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "CTmp", CTmp);
     Utils::Print(__FUNCTION__, "measC", measC);
     Utils::Print(__FUNCTION__, "D", D);
+    Utils::Print(__FUNCTION__, "mS_in", mS_in);
     Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
@@ -393,7 +350,7 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 
     // update current particle state //
 
-    for (size_t i{0}; i < 8; ++i) fP[i] = tpr.P[i];
+    fP = tpr.P;
     for (size_t i{0}; i < 6; ++i) fC[i] = measC[i];
     for (size_t i{6}; i < 28; ++i) fC[i] = tpr.C[i];
 
@@ -404,59 +361,63 @@ void Particle::AddProductionVertex(const Vector<3>& prod_vtx, const SymMatrix<3>
 
     // Kalman gain calculation //
 
-    Vector<7> mCHt0{fC[0], fC[1], fC[3], fC[6], fC[10], fC[15], fC[21]};
-    Vector<7> mCHt1{fC[1], fC[2], fC[4], fC[7], fC[11], fC[16], fC[22]};
-    Vector<7> mCHt2{fC[3], fC[4], fC[5], fC[8], fC[12], fC[17], fC[23]};
+    // extract columns 0, 1, 2 from all 7 rows of the symm. matrix fC
+    Matrix<7, 3> mCHt{};
+    mCHt[0][0] = fC[0];
+    mCHt[0][1] = fC[1];
+    mCHt[0][2] = fC[3];
+    mCHt[1][0] = fC[1];
+    mCHt[1][1] = fC[2];
+    mCHt[1][2] = fC[4];
+    mCHt[2][0] = fC[3];
+    mCHt[2][1] = fC[4];
+    mCHt[2][2] = fC[5];
+    mCHt[3][0] = fC[6];
+    mCHt[3][1] = fC[7];
+    mCHt[3][2] = fC[8];
+    mCHt[4][0] = fC[10];
+    mCHt[4][1] = fC[11];
+    mCHt[4][2] = fC[12];
+    mCHt[5][0] = fC[15];
+    mCHt[5][1] = fC[16];
+    mCHt[5][2] = fC[17];
+    mCHt[6][0] = fC[21];
+    mCHt[6][1] = fC[22];
+    mCHt[6][2] = fC[23];
 
-    Vector<7> k0;
-    Vector<7> k1;
-    Vector<7> k2;
+    // mK (7x3) = mCHt (7x3) × mS (3x3 symmetric)
+    Matrix<7, 3> mK{Math::MultiplyNonSymmWithSymm(mCHt, mS)};
+
+    // fP += K × res
     for (size_t i{0}; i < 7; ++i) {
-        k0[i] = mCHt0[i] * mS[0] + mCHt1[i] * mS[1] + mCHt2[i] * mS[3];
-        k1[i] = mCHt0[i] * mS[1] + mCHt1[i] * mS[2] + mCHt2[i] * mS[4];
-        k2[i] = mCHt0[i] * mS[3] + mCHt1[i] * mS[4] + mCHt2[i] * mS[5];
-    }
-
-    for (size_t i{0}; i < 7; ++i) fP[i] = fP[i] + k0[i] * res[0] + k1[i] * res[1] + k2[i] * res[2];
-
-    for (size_t i{0}, k{0}; i < 7; ++i) {
-        for (size_t j{0}; j <= i; ++j, ++k) {
-            fC[k] = fC[k] - (k0[i] * mCHt0[j] + k1[i] * mCHt1[j] + k2[i] * mCHt2[j]);
+        for (size_t j{0}; j < 3; ++j) {
+            fP[i] += mK[i][j] * res[j];
         }
     }
+
+    // fC -= K × mCHt^T (only lower triangle)
+    for (size_t i{0}, idx{0}; i < 7; ++i) {
+        for (size_t j{0}; j <= i; ++j, ++idx) {
+            for (size_t k{0}; k < 3; ++k) {
+                fC[idx] -= mK[i][k] * mCHt[j][k];
+            }
+        }
+    }
+
 #if KF_DEBUG
-    Utils::PrintSplitMatrix(__FUNCTION__, "mCH", mCHt0, mCHt1, mCHt2);
-    Utils::PrintSplitMatrix(__FUNCTION__, "KGain", k0, k1, k2);
+    Utils::Print(__FUNCTION__, "mCHt", mCHt);
+    Utils::Print(__FUNCTION__, "mK", mK);
     Utils::Print(__FUNCTION__, "fP (after Kalman gain)", fP);
     Utils::Print(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
-    Matrix<3, 3> K{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) K[i][j] += measC[IJ(i, k)] * mS[IJ(k, j)];
-        }
-    }
+    Matrix<3, 3> K{Math::MultiplySymmetricMatrices(measC, mS)};
 
-    Matrix<3, 3> K2{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) K2[i][j] = -K[j][i];
-        K2[i][i] += 1.;
-    }
+    Matrix<3, 3> K2{Math::AddMatrices(Math::Identity<3>(), Math::Transpose(K), 1., -1.)};
 
-    Matrix<3, 3> A{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) A[i][j] += D[k][i] * K2[k][j];
-        }
-    }
+    Matrix<3, 3> A{Math::MultiplyMatrices(Math::Transpose(D), K2)};
 
-    Matrix<3, 3> M{};
-    for (size_t i{0}; i < 3; ++i) {
-        for (size_t j{0}; j < 3; ++j) {
-            for (size_t k{0}; k < 3; ++k) M[i][j] += K[i][k] * A[k][j];
-        }
-    }
+    Matrix<3, 3> M{Math::MultiplyMatrices(K, A)};
 
     fC[0] += 2. * M[0][0];
     fC[1] += M[0][1] + M[1][0];
@@ -557,7 +518,6 @@ void Particle::AddMassConstraint(double target_mass) {
 // - `v` : arbitrary vertex
 // Return: (packed in a single `Result::Minimization` struct)
 // - `ds_dr` : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1
-// TO CONSIDER: p2 and (p2*p2) cannot be zero
 Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
@@ -577,7 +537,8 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     double p2{px0 * px0 + py0 * py0 + pz0 * pz0};
     double a{px0 * dx + py0 * dy + pz0 * dz};
 
-    Result::Minimization min;
+    Result::Minimization min{};
+    if (p2 < Const::AbsAlmostZero) return min;
 
     min.ds = a / p2;
 
@@ -599,6 +560,7 @@ Result::Minimization Particle::MinimizeLinePoint(const Vector<3>& v) const {
     min.pca.dir[0] = px0;
     min.pca.dir[1] = py0;
     min.pca.dir[2] = pz0;
+
 #if KF_DEBUG
     Utils::PrintDouble(__FUNCTION__, "min.ds", min.ds);
     Utils::Print(__FUNCTION__, "min.ds_dr", min.ds_dr);
@@ -622,7 +584,6 @@ Result::Minimization Particle::MinimizeHelixPoint(const Vector<3>& v, double bz)
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
-
     Result::Minimization min{};
 
     // 1 -- find point of closest approach (PCA) in XY plane //
@@ -783,9 +744,8 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
-
-    Result::Minimization min1;
-    Result::Minimization min2;
+    Result::Minimization min1{};
+    Result::Minimization min2{};
 
     // 1 -- find points of closest approach (PCAs) in XY plane //
 
@@ -840,11 +800,11 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     double dz{0.};
 
     int w_sign{+1};  // winner sign
-    double dca_sq{Const::BigNumber};
+    double dca_sq{std::numeric_limits<double>::max()};
 
     for (auto sign : {+1, -1}) {
         // particle 1 //
-        Cache tmp1;
+        Cache tmp1{};
         if (!isStraight1) {
             tmp1.theta = std::atan2(bq1 * (k11 * c1 + sign * k21 * d1), sign * bq1 * k11 * d1 * bq1 - k21 * c1);
             std::tie(tmp1.sin, tmp1.cos) = Math::sincos(tmp1.theta);
@@ -869,7 +829,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
         }
 
         // particle 2 //
-        Cache tmp2;
+        Cache tmp2{};
         if (!isStraight2) {
             tmp2.theta = std::atan2(bq2 * (k12 * c2 + sign * k22 * d1), sign * bq2 * k12 * d1 * bq2 - k22 * c2);
             std::tie(tmp2.sin, tmp2.cos) = Math::sincos(tmp2.theta);
@@ -1244,8 +1204,8 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
 #if KF_DEBUG
     std::println(stdout, "-- started ({}) --", __FUNCTION__);
 #endif
-    Result::Minimization min1;
-    Result::Minimization min2;
+    Result::Minimization min1{};
+    Result::Minimization min2{};
 
     // find points of closest approach (PCAs) in XY plane //
 
@@ -1349,7 +1309,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
-    Result::Transport tpr;
+    Result::Transport tpr{};
 
     double bq{bz * fQ * Const::Kappa};
 
@@ -1366,8 +1326,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     tpr.P[6] = fP[6];
     tpr.P[7] = fP[7];
 
-    Matrix<8, 8> mJ{};
-    for (size_t i{0}; i < 8; ++i) mJ[i][i] = 1.;
+    Matrix<8, 8> mJ{Math::Identity<8>()};
     mJ[0][3] = min.sB;
     mJ[0][4] = min.cB;
     mJ[1][3] = -min.cB;
@@ -1395,11 +1354,8 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
         }
     }
 
-    tpr.C = Math::MultQSQt<8>(mJ, fC);
-
-    for (size_t i{0}; i < 6; ++i) {
-        for (size_t j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
-    }
+    tpr.C = Math::MultiplyQSQT(mJ, fC);
+    tpr.jacob = Math::Slice<8, 8, 6, 6>(mJ);
 
     for (size_t i1{0}; i1 < 6; ++i1) {
         for (size_t i2{0}; i2 < 6; ++i2) {
@@ -1431,32 +1387,23 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
+    Result::Transport tpr{};
 
-    Result::Transport tpr;
-
-    Matrix<8, 8> mJ{};
-    mJ[0][0] = 1.;
+    Matrix<8, 8> mJ{Math::Identity<8>()};
     mJ[0][3] = min.ds;
-    mJ[1][1] = 1.;
     mJ[1][4] = min.ds;
-    mJ[2][2] = 1.;
     mJ[2][5] = min.ds;
-    mJ[3][3] = 1.;
-    mJ[4][4] = 1.;
-    mJ[5][5] = 1.;
-    mJ[6][6] = 1.;
-    mJ[7][7] = 1.;
 
     double px{fP[3]};
     double py{fP[4]};
     double pz{fP[5]};
 
-    tpr.P[0] = fP[0] + min.ds * fP[3];
-    tpr.P[1] = fP[1] + min.ds * fP[4];
-    tpr.P[2] = fP[2] + min.ds * fP[5];
-    tpr.P[3] = fP[3];
-    tpr.P[4] = fP[4];
-    tpr.P[5] = fP[5];
+    tpr.P[0] = fP[0] + min.ds * px;
+    tpr.P[1] = fP[1] + min.ds * py;
+    tpr.P[2] = fP[2] + min.ds * pz;
+    tpr.P[3] = px;
+    tpr.P[4] = py;
+    tpr.P[5] = pz;
     tpr.P[6] = fP[6];
     tpr.P[7] = fP[7];
 
@@ -1470,11 +1417,10 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
             mJ[i1][i2] += mJds[i1][3] * px * min.ds_dr[i2] + mJds[i1][4] * py * min.ds_dr[i2] + mJds[i1][5] * pz * min.ds_dr[i2];
         }
     }
-    tpr.C = Math::MultQSQt<8>(mJ, fC);
 
-    for (size_t i{0}; i < 6; ++i) {
-        for (size_t j{0}; j < 6; ++j) tpr.jacob[i][j] = mJ[i][j];
-    }
+    tpr.C = Math::MultiplyQSQT(mJ, fC);
+    tpr.jacob = Math::Slice<8, 8, 6, 6>(mJ);
+
     for (size_t i1{0}; i1 < 6; ++i1) {
         for (size_t i2{0}; i2 < 6; ++i2) {
             tpr.corr[i1][i2] = mJds[i1][3] * px * min.ds_dr1[i2] + mJds[i1][4] * py * min.ds_dr1[i2] + mJds[i1][5] * pz * min.ds_dr1[i2];

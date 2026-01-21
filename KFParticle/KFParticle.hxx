@@ -20,11 +20,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef KFPARTICLE_HXX
-#define KFPARTICLE_HXX
+#pragma once
 
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <print>
 #include <utility>
 #include <vector>
@@ -62,6 +62,9 @@ struct alignas(KF_SIMD_ALIGN) Transport {
     Vector<8> P{};
 };
 struct alignas(KF_SIMD_ALIGN) Measurement {
+    Measurement(const Vector<8> &p1, const Vector<8> &p2, const SymMatrix<8> &c1, const SymMatrix<8> &c2)  //
+        : C1{c1}, C2{c2}, P1{p1}, P2{p2} {}
+
     SymMatrix<8> C1{};
     SymMatrix<8> C2{};
     Matrix<3, 3> D{};
@@ -85,9 +88,9 @@ struct alignas(KF_SIMD_ALIGN) MassConstraint {
 class alignas(KF_SIMD_ALIGN) Particle {
    public:
     Particle(const Particle &) = default;
-    Particle(Particle &&) = delete;
+    Particle(Particle &&) = default;
     Particle &operator=(const Particle &) = default;
-    Particle &operator=(Particle &&) = delete;
+    Particle &operator=(Particle &&) = default;
 
     Particle() { Initialize(); }
     Particle(const Vector<6> &p, const SymMatrix<6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
@@ -107,9 +110,9 @@ class alignas(KF_SIMD_ALIGN) Particle {
     [[nodiscard]] int NDF() const noexcept { return fNDF; }       // return number of degrees of freedom
     [[nodiscard]] double Chi2NDF() const { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
 
-    [[nodiscard]] double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); };
-    [[nodiscard]] double P() const { return std::sqrt(P2()); };
-    [[nodiscard]] double Pt() const { return Math::Norm<2>({Px(), Py()}); };
+    [[nodiscard]] double P2() const { return Math::SquaredNorm<3>({Px(), Py(), Pz()}); }
+    [[nodiscard]] double P() const { return std::sqrt(P2()); }
+    [[nodiscard]] double Pt() const { return Math::Norm<2>({Px(), Py()}); }
     [[nodiscard]] double Mass() const {
         double mass2{E() * E() - P2()};
         if (mass2 < 0.) return -1.;  // protection
@@ -117,16 +120,16 @@ class alignas(KF_SIMD_ALIGN) Particle {
     }
 
     // Pseudorapidity.
-    [[nodiscard]] double Eta() const { return std::atanh(Pz() / P() + Const::Epsilon); };
+    [[nodiscard]] double Eta() const { return std::atanh(Pz() / P() + Const::Epsilon); }
 
     // Rapidity.
-    [[nodiscard]] double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz() + Const::Epsilon)) / 2.; };
+    [[nodiscard]] double Rapidity() const { return std::log((E() + Pz()) / (E() - Pz() + Const::Epsilon)) / 2.; }
 
     // Radius (cm) in cylindrical coordinates.
-    [[nodiscard]] double Radius2D() const { return Math::Norm<2>({X(), Y()}); };
+    [[nodiscard]] double Radius2D() const { return Math::Norm<2>({X(), Y()}); }
 
     // Radius (cm) in spherical coordinates.
-    [[nodiscard]] double Radius3D() const { return Math::Norm<3>({X(), Y(), Z()}); };
+    [[nodiscard]] double Radius3D() const { return Math::Norm<3>({X(), Y(), Z()}); }
 
     // Return point of closest approach (PCA) of a certain daughter after minimization.
     [[nodiscard]] PCA GetPCA(size_t index_daughter) const {
@@ -135,8 +138,8 @@ class alignas(KF_SIMD_ALIGN) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter and fitted vertex.
-    [[nodiscard]] double GetDCA(size_t index_daughter) const {
-        if (fPCAs.size() <= index_daughter) return -1.;  // protection
+    [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
         Vector<3> diff{};
         for (size_t i{0}; i < 3; ++i) {
             diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
@@ -145,8 +148,8 @@ class alignas(KF_SIMD_ALIGN) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter1 and added daughter2.
-    [[nodiscard]] double GetDCA(size_t index_daughter1, size_t index_daughter2) const {
-        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
+    [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter1, size_t index_daughter2) const {
+        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
         Vector<3> diff{};
         for (size_t i{0}; i < 3; ++i) {
             diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
@@ -155,8 +158,8 @@ class alignas(KF_SIMD_ALIGN) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter and fitted vertex.
-    [[nodiscard]] double GetDCAxy(size_t index_daughter) const {
-        if (fPCAs.size() <= index_daughter) return -1.;  // protection
+    [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
         Vector<2> diff{};
         for (size_t i{0}; i < 2; ++i) {
             diff[i] = fP[i] - fPCAs[index_daughter].xyz[i];
@@ -165,8 +168,8 @@ class alignas(KF_SIMD_ALIGN) Particle {
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter1 and added daughter2.
-    [[nodiscard]] double GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
-        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return -1.;  // protection
+    [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
+        if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
         Vector<2> diff{};
         for (size_t i{0}; i < 2; ++i) {
             diff[i] = fPCAs[index_daughter1].xyz[i] - fPCAs[index_daughter2].xyz[i];
@@ -174,10 +177,9 @@ class alignas(KF_SIMD_ALIGN) Particle {
         return Math::Norm<2>(diff);
     }
 
-    [[nodiscard]] double GetParameter(int i) const { return fP[i]; }   // return P[i] parameter
-    [[nodiscard]] double GetCovariance(int i) const { return fC[i]; }  // return C[i] element of the covariance matrix in the lower triangular form
-    [[nodiscard]] double GetCovariance(int i, int j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
-    [[nodiscard]] SymMatrix<6> Cov_6x6() const { return Slice<8, 6>(fC); }
+    [[nodiscard]] double GetParameter(size_t i) const { return fP[i]; }   // return P[i] parameter
+    [[nodiscard]] double GetCovariance(size_t i) const { return fC[i]; }  // return C[i] element of the covariance matrix in the lower triangular form
+    [[nodiscard]] double GetCovariance(size_t i, size_t j) const { return fC[IJ(i, j)]; }  // return C[i,j] element of the covariance matrix
 
     void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
     void AddDaughter(const Particle &daughter, double bz) {
@@ -193,7 +195,7 @@ class alignas(KF_SIMD_ALIGN) Particle {
     void AddProductionVertex(const Vector<3> &prod_vtx, const SymMatrix<3> &cov, double bz, double chi2_threshold = 1E4);
     void AddMassConstraint(double target_mass);
 
-    void Print() {
+    void Print() const {
         std::println(stdout, "(X,Y,Z,S)    = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[0], fP[1], fP[2], fP[7]);
         std::println(stdout, "(Px,Py,Pz,E) = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[3], fP[4], fP[5], fP[6]);
         std::println(stdout, "Mass         = {:13.6e}", Mass());
@@ -209,10 +211,10 @@ class alignas(KF_SIMD_ALIGN) Particle {
     // Set Cxx=Cyy=Czz=100 and Css=1
     // Note: it will modify the state of the current `KF::Particle`
     void Initialize() {
-        fC[0] = 100.;
-        fC[2] = 100.;
-        fC[5] = 100.;
-        fC[35] = 1.;
+        fC[0] = Const::Initial_C_xx;
+        fC[2] = Const::Initial_C_yy;
+        fC[5] = Const::Initial_C_zz;
+        fC[35] = Const::Initial_C_SS;
     }
 
     // Set the parameters of the particle:
@@ -304,7 +306,7 @@ class alignas(KF_SIMD_ALIGN) Particle {
 
     SymMatrix<8> fC{};  // lower-triangular part of the symmetric 8x8 covariance matrix
 
-    // Registered points of closest approach (PCAs).
+    // Registered Points of Closest Approach (PCAs).
     // 0) If there's no or a single daughter has been added <-> no fitted vertex => size = 0
     // 1) After a second daughter has been added <-> there is a fitted vertex => size = 2
     // 2) After that, for any additional daughter or production vertex => size += 1
@@ -317,5 +319,3 @@ class alignas(KF_SIMD_ALIGN) Particle {
 };
 
 }  // namespace KF
-
-#endif  // KFPARTICLE_HXX
