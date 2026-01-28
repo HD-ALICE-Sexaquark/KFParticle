@@ -1,33 +1,30 @@
 # KFParticle.hxx
 
-A fork of [KFParticle](https://github.com/alisw/KFParticle), with:
+A fork of [**KFParticle**](https://github.com/alisw/KFParticle), with:
 
 - same mathematics
 - more protections
 - slightly faster, with cached output of expensive operations
 - reduced to contain only ALICE-related settings (homogeneous magnetic field in z-axis)
 - formatted with `.clang-format` and `.clang-tidy`
-- more comments
+- improved code readability, more comments
 - upgraded CMake instructions
-- no third-party library dependencies
 
 ## Requirements
 
 - CMake (v3.25 or higher)
 - C++ compiler compatible with C++23
+- [**Armadillo**](https://arma.sourceforge.net/)
 
 ## Build
 
 ```bash
 mkdir <build-dir> && cd <build-dir>
-cmake <source-dir> <options>
+cmake <source-dir> -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
 cmake --build .
 cmake --install . --prefix <install-dir>
 ```
-
-Additional options:
-
-* `-DKF_DEBUG=ON` -- enable debug messages
+where `BUILD_TYPE` can be `Debug`, `Release` or `RelWithDebInfo`.
 
 ## Test
 
@@ -35,7 +32,10 @@ Using `g++`:
 
 ```bash
 cd KFParticleTest/
-g++ KFParticleTest.cxx -std=c++23 -march=native -mtune=native -O3 -DNDEBUG -I<install-dir>/include -L<install-dir>/lib -lKFParticle -o Test
+g++ KFParticleTest.cxx -std=c++23 <additional-compiler-flags> \
+                       -I<install-dir>/include -L<install-dir>/lib -lKFParticle \
+                       -isystem <armadillo-dir>/include -L<armadillo-dir>/lib -larmadillo \
+                       -o Test
 ./Test # output should be equivalent to KFParticleTest/test.txt
 ```
 
@@ -58,4 +58,4 @@ And make sure to prepare your CMake cache (step before building) with `-DKFParti
 
 ## Examples
 
-* [tree2secondaries](https://github.com/HD-ALICE-Sexaquark/tree2secondaries)
+* [**tree2secondaries**](https://github.com/HD-ALICE-Sexaquark/tree2secondaries)

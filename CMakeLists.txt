@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25...3.31)
 project(
   KFParticle
-  VERSION 26.1.21
+  VERSION 26.1.28
   LANGUAGES CXX)
 
 # prevent in-source builds #
@@ -16,7 +16,6 @@ set(CMAKE_CXX_EXTENSIONS OFF) # ensure -std=c++xx instead of -std=g++xx
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS True)
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF) # remove -fmodules-ts flags
 
 # includes and macros #
 
@@ -40,44 +39,35 @@ set(SOURCES KFParticle/KFParticle.cxx)
 set(HEADERS KFParticle/KFParticle.hxx KFParticle/KFParticle_Math.hxx
             KFParticle/KFParticle_Const.hxx KFParticle/KFParticle_Utils.hxx)
 
+# find dependency #
+
+find_package(Armadillo REQUIRED CONFIG)
+
 # main target #
 
-add_library(KFParticle SHARED ${SOURCES})
+add_library(${PROJECT_NAME} SHARED ${SOURCES})
+
 target_include_directories(
-  KFParticle
-  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
-         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+  ${PROJECT_NAME}
+  PRIVATE ${ARMADILLO_INCLUDE_DIRS}
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
+          $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
-# propagate c++23 to consumers
-target_compile_features(KFParticle PUBLIC cxx_std_23)
-target_compile_options(
-  KFParticle PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wpedantic
-                     -Wconversion)
-
-# show available configs #
-
-message("-- Available configurations: ${CMAKE_CONFIGURATION_TYPES}")
-
-# apply config #
+target_link_libraries(${PROJECT_NAME} PRIVATE ${ARMADILLO_LIBRARIES})
 
 target_compile_options(
-  KFParticle
-  PRIVATE $<$<CONFIG:Release>:
-          -O3
-          -DNDEBUG
-          -ffp-contract=fast
-          -mtune=native
-          -march=native>
-          $<$<CONFIG:Debug>:
-          -O0
-          -g>)
-target_compile_definitions(KFParticle PUBLIC $<$<CONFIG:Debug>:KF_DEBUG>)
+  ${PROJECT_NAME} PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wpedantic
+                          -Wconversion)
+
+# set KF_DEBUG #
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC $<$<CONFIG:Debug>:KF_DEBUG>)
 
 # installation of library and headers #
 
 install(
-  TARGETS KFParticle
+  TARGETS ${PROJECT_NAME}
   EXPORT ${PROJECT_NAME}Targets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

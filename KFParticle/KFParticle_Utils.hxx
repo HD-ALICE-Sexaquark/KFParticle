@@ -1,93 +1,39 @@
 #pragma once
 
-#include <cstddef>
 #include <format>
-#include <optional>
 #include <print>
 #include <string_view>
 
-#include "KFParticle_Math.hxx"
-
-template <size_t N>
-struct std::formatter<KF::Vector<N>> {
-
-    constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
-
-    auto format(const KF::Vector<N> &vec, std::format_context &ctx) const {
-        auto out = ctx.out();
-        out = std::format_to(out, "(");
-        for (size_t i{0}; i < N; ++i) {
-            out = std::format_to(out, "{:13.6e}", vec[i]);
-            if (i < N - 1) out = std::format_to(out, ", ");
-        }
-        out = std::format_to(out, ")");
-        return out;
-    }
-};
-
-template <size_t K>
-struct std::formatter<KF::SymMatrix<K>> {
-
-    constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
-
-    auto format(const KF::SymMatrix<K> &arr, std::format_context &ctx) const {
-        auto out = ctx.out();
-        out = std::format_to(out, "\n");
-        size_t n_in_row{0};
-        size_t max_n_row{1};
-        for (size_t i{0}; i < K * (K + 1) / 2; ++i) {
-            out = std::format_to(out, "{:13.6e}", arr[i]);
-            ++n_in_row;
-            if (n_in_row == max_n_row) {
-                if (i < (K * (K + 1) / 2) - 1) out = std::format_to(out, "\n");
-                n_in_row = 0;
-                ++max_n_row;
-            } else {
-                out = std::format_to(out, "   ");
-            }
-        }
-        return out;
-    }
-};
-
-template <size_t N, size_t M>
-struct std::formatter<KF::Matrix<N, M>> {
-
-    constexpr auto parse(std::format_parse_context &ctx) { return ctx.begin(); }
-
-    auto format(const KF::Matrix<N, M> &arr, std::format_context &ctx) const {
-        auto out = ctx.out();
-        out = std::format_to(out, "\n");
-        for (size_t i{0}; i < N; ++i) {
-            for (size_t j{0}; j < M; ++j) {
-                out = std::format_to(out, "{:13.6e}", arr[i][j]);
-                if (j < M - 1)
-                    out = std::format_to(out, "   ");
-                else if (i < N - 1)
-                    out = std::format_to(out, "\n");
-            }
-        }
-        return out;
-    }
-};
-
-template <typename T>
-    requires std::formattable<T, char>
-struct std::formatter<std::optional<T>> {
-    std::formatter<T> underlying_formatter;
-    static constexpr std::string_view null_str = "N/A";
-
-    constexpr auto parse(std::format_parse_context &ctx) { return underlying_formatter.parse(ctx); }
-
-    auto format(const std::optional<T> &opt, std::format_context &ctx) const {
-        if (opt.has_value()) {
-            return underlying_formatter.format(*opt, ctx);
-        }
-        return std::format_to(ctx.out(), "{}", null_str);
-    }
-};
+#include <armadillo>
 
 namespace KF::Utils {
+
+inline arma::mat vec_to_symmat(const std::vector<double> &lower_tri) {
+
+    // Solve N*(N+1)/2 = size for N
+    // N = (-1 + sqrt(1 + 8*size)) / 2
+    std::size_t size{lower_tri.size()};
+    double n_double{(-1. + std::sqrt(1. + 8. * double(size))) / 2.};
+    std::size_t n{static_cast<std::size_t>(std::round(n_double))};
+
+    // Validate that size is actually a triangular number
+    if (n * (n + 1) / 2 != size) {
+        throw std::invalid_argument("Vector size must be a triangular number N*(N+1)/2");
+    }
+
+    arma::mat lower(n, n, arma::fill::zeros);
+
+    // Fill lower triangle row by row
+    // Elements are assumed in order: (0,0), (1,0), (1,1), (2,0), (2,1), (2,2), ...
+    std::size_t idx = 0;
+    for (std::size_t i = 0; i < n; ++i) {
+        for (std::size_t j = 0; j <= i; ++j) {
+            lower(i, j) = static_cast<double>(lower_tri[idx++]);
+        }
+    }
+
+    return arma::symmatl(lower);
+}
 
 [[maybe_unused]] static void PrintDouble(std::string_view fcn_name, std::string_view name, double val) {
     std::println(stdout, "({}) {} = {:13.6e}", fcn_name, name, val);
@@ -96,6 +42,14 @@ namespace KF::Utils {
 template <class S>
 static void Print(std::string_view fcn_name, std::string_view name, const S &obj) {
     std::println(stdout, "({}) {} = {}", fcn_name, name, obj);
+}
+
+[[maybe_unused]] static void Print(std::string_view fcn_name, std::string_view name, const arma::vec &vec) {
+    vec.t().print(std::format("({}) {} =", fcn_name, name));
+}
+
+[[maybe_unused]] static void Print(std::string_view fcn_name, std::string_view name, const arma::mat &mat) {
+    mat.print(std::format("({}) {} =", fcn_name, name));
 }
 
 }  // namespace KF::Utils
