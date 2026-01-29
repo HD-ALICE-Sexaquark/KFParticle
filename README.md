@@ -20,11 +20,10 @@ A fork of [**KFParticle**](https://github.com/alisw/KFParticle), with:
 
 ```bash
 mkdir <build-dir> && cd <build-dir>
-cmake <source-dir> -DCMAKE_BUILD_TYPE=${BUILD_TYPE}
+cmake <source-dir> -DCMAKE_BUILD_TYPE= # Debug, Release or RelWithDebInfo
 cmake --build .
 cmake --install . --prefix <install-dir>
 ```
-where `BUILD_TYPE` can be `Debug`, `Release` or `RelWithDebInfo`.
 
 ## Test
 
@@ -34,7 +33,7 @@ Using `g++`:
 cd KFParticleTest/
 g++ KFParticleTest.cxx -std=c++23 <additional-compiler-flags> \
                        -I<install-dir>/include -L<install-dir>/lib -lKFParticle \
-                       -isystem <armadillo-dir>/include -L<armadillo-dir>/lib -larmadillo \
+                       -I<armadillo-dir>/include -L<armadillo-dir>/lib -larmadillo \
                        -o Test
 ./Test # output should be equivalent to KFParticleTest/test.txt
 ```

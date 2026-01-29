@@ -66,8 +66,9 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
         Utils::Print(__FUNCTION__, "F4", tpr2.jacob);
 #endif
 
-        arma::mat V0Tmp = tpr1.corr * daughter.fC.submat(0, 0, arma::size(6, 6)) * tpr1.corr.t();
-        arma::mat V1Tmp = tpr2.corr * fC.submat(0, 0, arma::size(6, 6)) * tpr2.corr.t();
+        arma::mat::fixed<6, 6> V0Tmp = tpr1.corr * daughter.fC.submat(0, 0, arma::size(6, 6)) * tpr1.corr.t();
+        arma::mat::fixed<6, 6> V1Tmp = tpr2.corr * fC.submat(0, 0, arma::size(6, 6)) * tpr2.corr.t();
+
 #if KF_DEBUG
         Utils::Print(__FUNCTION__, "V0Tmp", V0Tmp);
         Utils::Print(__FUNCTION__, "V1Tmp", V1Tmp);
@@ -78,13 +79,13 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
         meas.C1.submat(0, 0, arma::size(6, 6)) += V0Tmp;
         meas.C2.submat(0, 0, arma::size(6, 6)) += V1Tmp;
 
-        arma::mat fC_sliced = fC.submat(0, 0, arma::size(6, 6));
-        arma::mat d_fC_sliced = daughter.fC.submat(0, 0, arma::size(6, 6));
+        arma::mat::fixed<6, 6> fC_sliced = fC.submat(0, 0, arma::size(6, 6));
+        arma::mat::fixed<6, 6> d_fC_sliced = daughter.fC.submat(0, 0, arma::size(6, 6));
 
-        arma::mat F3C1F1T = tpr2.corr * fC_sliced * tpr1.jacob.t();    // = F3 x C1 x F1^T
-        arma::mat F4C2F2T = tpr2.jacob * d_fC_sliced * tpr1.corr.t();  // = F4 x C2 x F2^T
+        arma::mat::fixed<6, 6> F3C1F1T = tpr2.corr * fC_sliced * tpr1.jacob.t();    // = F3 x C1 x F1^T
+        arma::mat::fixed<6, 6> F4C2F2T = tpr2.jacob * d_fC_sliced * tpr1.corr.t();  // = F4 x C2 x F2^T
 
-        arma::mat temp_addition = F3C1F1T + F4C2F2T;
+        arma::mat::fixed<6, 6> temp_addition = F3C1F1T + F4C2F2T;
         meas.D = temp_addition.submat(0, 0, arma::size(3, 3));
 
 #if KF_DEBUG
@@ -108,13 +109,13 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
     auto tpr2 = daughter.Transport(min2, bz);
     Result::Measurement meas{fP, tpr2.P, fC, tpr2.C};
 
-    arma::mat sliced_fC = fC.submat(0, 0, arma::size(3, 3));
-    arma::mat sliced_F_6x3 = tpr2.jacob.submat(0, 0, arma::size(6, 3));
-    arma::mat sliced_F_3x3 = tpr2.jacob.submat(0, 0, arma::size(3, 3));
+    arma::mat::fixed<3, 3> sliced_fC = fC.submat(0, 0, arma::size(3, 3));
+    arma::mat::fixed<6, 3> sliced_F_6x3 = tpr2.jacob.submat(0, 0, arma::size(6, 3));
+    arma::mat::fixed<3, 3> sliced_F_3x3 = tpr2.jacob.submat(0, 0, arma::size(3, 3));
 
-    arma::mat FVFT = sliced_F_6x3 * sliced_fC * sliced_F_6x3.t();  // = F x V x F^T
+    arma::mat::fixed<6, 6> FVFT = sliced_F_6x3 * sliced_fC * sliced_F_6x3.t();  // = F x V x F^T
 
-    arma::mat tmp = sliced_fC * sliced_F_3x3.t();
+    arma::mat::fixed<3, 3> tmp = sliced_fC * sliced_F_3x3.t();
     meas.D = tmp.t();
 
     meas.C2.submat(0, 0, arma::size(3, 3)) += FVFT.submat(0, 0, arma::size(3, 3));
@@ -142,8 +143,9 @@ Result::Measurement Particle::GetMeasurement(const Particle& daughter, double bz
 // - `daughter`       : the daughter `KF::Particle` to be added
 // - `bz`             : z-component of magnetic field
 // - `chi2_threshold` : do an early cut of chi2
+// Return: true if successful, false if not.
 // Note: it will modify the state of the current `KF::Particle`
-void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
+bool Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, double chi2_threshold) {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
@@ -152,8 +154,17 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     fPCAs.emplace_back(meas.P1(0), meas.P1(1), meas.P1(2), meas.P1(3), meas.P1(4), meas.P1(5));
     fPCAs.emplace_back(meas.P2(0), meas.P2(1), meas.P2(2), meas.P2(3), meas.P2(4), meas.P2(5));
 
-    arma::mat mS_in = meas.C1.submat(0, 0, arma::size(3, 3)) + meas.C2.submat(0, 0, arma::size(3, 3));  // 3x3
-    arma::mat mS = arma::inv_sympd(mS_in);                                                              // 3x3
+    arma::mat::fixed<3, 3> mS_in = meas.C1.submat(0, 0, arma::size(3, 3)) + meas.C2.submat(0, 0, arma::size(3, 3));
+
+    arma::mat::fixed<3, 3> mS(arma::fill::zeros);
+    bool inv_success = arma::inv_sympd(mS, mS_in);
+    if (!inv_success) {
+#if KF_DEBUG
+        std::println(stdout, "({}) failed matrix inversion!", __FUNCTION__);
+        std::println(stdout, "-- finished ({}) --", __FUNCTION__);
+#endif
+        return false;
+    }
 
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "meas.P1", meas.P1);
@@ -165,7 +176,7 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
     Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
-    arma::vec zeta = meas.P2.head(3) - meas.P1.head(3);  // 3x1
+    arma::vec::fixed<3> zeta = meas.P2.head(3) - meas.P1.head(3);
     double dChi2{arma::as_scalar(zeta.t() * mS * zeta)};
 
 #if KF_DEBUG
@@ -179,7 +190,7 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
         std::println(stdout, "({}) early return has been called!", __FUNCTION__);
         std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
-        return;
+        return false;
     }
 
     // update current particle state //
@@ -199,11 +210,11 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 #endif
 
     // CHt = CH' - D'
-    arma::mat mCHt = meas.C1.submat(0, 0, arma::size(7, 3));  // 7x3
+    arma::mat::fixed<7, 3> mCHt = meas.C1.submat(0, 0, arma::size(7, 3));
     mCHt.submat(3, 0, arma::size(4, 3)) -= meas.C2.submat(3, 0, arma::size(4, 3));
 
     // Kalman gain K = mCH'*S
-    arma::mat mK = mCHt * mS;  // 7x3
+    arma::mat::fixed<7, 3> mK = mCHt * mS;
 
     // New estimation of the vertex position r += K*zeta
     fP.head(7) += mK * zeta;
@@ -221,10 +232,10 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 
     // do something else? //
 
-    arma::mat K = meas.C1.submat(0, 0, arma::size(3, 3)) * mS;
-    arma::mat K2 = arma::eye(3, 3) - K.t();
-    arma::mat A = meas.D * K2;
-    arma::mat M = K * A;
+    arma::mat::fixed<3, 3> K = meas.C1.submat(0, 0, arma::size(3, 3)) * mS;
+    arma::mat::fixed<3, 3> K2 = arma::eye(3, 3) - K.t();
+    arma::mat::fixed<3, 3> A = meas.D * K2;
+    arma::mat::fixed<3, 3> M = K * A;
 
     fC.submat(0, 0, arma::size(3, 3)) += M + M.t();
 
@@ -245,6 +256,8 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 #if KF_DEBUG
     std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
+
+    return true;
 }
 
 // Set a topological constraint on the current particle.
@@ -253,17 +266,18 @@ void Particle::AddDaughterWithEnergyFit(const Particle& daughter, double bz, dou
 // - `prod_cov`       : production vertex's covariance matrix -- 3x3 symm. matrix
 // - `bz`             : z-component of magnetic field
 // - `chi2_threshold` : do an early cut in chi2
+// Return: true if successful, false if not.
 // Note: it will modify the state of the current `KF::Particle`
 // Note: should be executed as final step, after the particle has been added all of its daughters!
-void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& prod_cov, double bz, double chi2_threshold) {
+bool Particle::AddProductionVertex(const arma::vec::fixed<3>& prod_vtx, const arma::mat::fixed<3, 3>& prod_cov, double bz, double chi2_threshold) {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
     // store current particle's vertex information //
 
-    arma::vec decay_vtx = fP.head(3);                         // 3x1
-    arma::mat decay_cov = fC.submat(0, 0, arma::size(3, 3));  // 3x3 symm.
+    arma::vec::fixed<3> decay_vtx = fP.head(3);
+    arma::mat::fixed<3, 3> decay_cov = fC.submat(0, 0, arma::size(3, 3));  // symm.
 
     // transport to production vertex //
 
@@ -272,12 +286,17 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
 
     auto tpr = Transport(min, bz);
 
-    arma::mat sliced_corr = tpr.corr.submat(0, 0, arma::size(3, 3));
-    arma::mat CTmp = sliced_corr * prod_cov * sliced_corr.t();
-    arma::mat measC = tpr.C.submat(0, 0, arma::size(3, 3)) + CTmp;
-    arma::mat D = prod_cov * sliced_corr;
-    arma::mat mS_in = measC + prod_cov;
-    arma::mat mS = arma::inv_sympd(mS_in);
+    arma::mat::fixed<3, 3> sliced_corr = tpr.corr.submat(0, 0, arma::size(3, 3));
+    arma::mat::fixed<3, 3> CTmp = sliced_corr * prod_cov * sliced_corr.t();      // symm.
+    arma::mat::fixed<3, 3> measC = tpr.C.submat(0, 0, arma::size(3, 3)) + CTmp;  // symm.
+    arma::mat::fixed<3, 3> D = prod_cov * sliced_corr;
+
+    arma::mat::fixed<3, 3> mS_in = measC + prod_cov;
+    if (!mS_in.is_symmetric()) return false;
+
+    arma::mat::fixed<3, 3> mS;
+    bool inv_success = arma::inv_sympd(mS, mS_in);
+    if (!inv_success) return false;
 
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "CTmp", CTmp);
@@ -287,7 +306,7 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
     Utils::Print(__FUNCTION__, "mS", mS);
 #endif
 
-    arma::vec res = prod_vtx - tpr.P.head(3);  // 3x1
+    arma::vec::fixed<3> res = prod_vtx - tpr.P.head(3);
     double dChi2{arma::as_scalar(res.t() * mS * res)};
 
 #if KF_DEBUG
@@ -301,7 +320,7 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
         std::println(stdout, "({}) early return has been called!", __FUNCTION__);
         std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
-        return;
+        return false;
     }
 
     // update current particle state //
@@ -317,11 +336,11 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
 
     // Kalman gain calculation //
 
-    arma::mat mCHt = fC.submat(0, 0, arma::size(7, 3));
-    arma::mat mK = mCHt * mS;
+    arma::mat::fixed<7, 3> mCHt = fC.submat(0, 0, arma::size(7, 3));
+    arma::mat::fixed<7, 3> mK = mCHt * mS;
 
     // fP += K × res
-    fP += mK * res;
+    fP.head(7) += mK * res;
 
     // fC -= K × mCHt^T (only lower triangle)
     fC.submat(0, 0, arma::size(7, 7)) -= mK * mCHt.t();
@@ -333,10 +352,10 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
     Utils::Print(__FUNCTION__, "fC (after Kalman gain)", fC);
 #endif
 
-    arma::mat K = measC * mS;
-    arma::mat K2 = arma::eye(3, 3) - K.t();
-    arma::mat A = D.t() * K2;
-    arma::mat M = K * A;
+    arma::mat::fixed<3, 3> K = measC * mS;
+    arma::mat::fixed<3, 3> K2 = arma::eye(3, 3) - K.t();
+    arma::mat::fixed<3, 3> A = D.t() * K2;
+    arma::mat::fixed<3, 3> M = K * A;
 
     fC.submat(0, 0, arma::size(3, 3)) += M + M.t();
 
@@ -362,32 +381,35 @@ void Particle::AddProductionVertex(const arma::vec& prod_vtx, const arma::mat& p
 
     fC(7, 7) = 0.;
 
-    arma::vec ds_dr_6 = min2decay.ds_dr.head(6);
-    arma::rowvec dsdrC = ds_dr_6.t() * fC.submat(0, 0, arma::size(6, 6));  // 1x6
+    arma::vec::fixed<6> ds_dr_6 = min2decay.ds_dr;
+    arma::rowvec::fixed<6> dsdrC = ds_dr_6.t() * fC.submat(0, 0, arma::size(6, 6));
     fC.row(7).head(6) = dsdrC;
 
     fC(7, 7) += arma::dot(dsdrC, ds_dr_6);
 
-    arma::vec ds_dr_3 = min2decay.ds_dr.head(3);
-    arma::rowvec dsdpV = ds_dr_3.t() * decay_cov;  // 1x3
+    arma::vec::fixed<3> ds_dr_3 = min2decay.ds_dr.head(3);
+    arma::rowvec::fixed<3> dsdpV = ds_dr_3.t() * decay_cov;
 
     fC(7, 7) -= arma::dot(dsdpV, ds_dr_3);
 
 #if KF_DEBUG
     Utils::PrintDouble(__FUNCTION__, "fChi2", fChi2);
-    Utils::Print(__FUNCTION__, "fNDF", fNDF);
+    Utils::PrintDouble(__FUNCTION__, "fNDF", double(fNDF));
     Utils::Print(__FUNCTION__, "fP (the end)", fP);
     Utils::Print(__FUNCTION__, "fC (the end)", fC);
     std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
+
+    return true;
 }
 
 // Set a mass constraint on the current particle.
 // Constraint equation g(...) : E^2 - (Px^2 + Py^2 + Pz^2) - target_mass^2 = 0
 // Input argument:
 // - `mass` : the mass to be set on the state vector mP
+// Return: true if successful, false if not.
 // Note: it will modify the state of the current `KF::Particle`
-void Particle::AddMassConstraint(double target_mass) {
+bool Particle::AddMassConstraint(double target_mass) {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
@@ -396,12 +418,12 @@ void Particle::AddMassConstraint(double target_mass) {
     double p2{Px() * Px() + Py() * Py() + Pz() * Pz()};
 
     // jacobian = d(g)/dr //
-    arma::vec mH = {0., 0., 0., -2 * Px(), -2 * Py(), -2 * Pz(), 2 * E(), 0.};
+    arma::vec::fixed<8> mH = {0., 0., 0., -2 * Px(), -2 * Py(), -2 * Pz(), 2 * E(), 0.};
 
     // residual = target_mass^2 - current_mass^2 //
     double zeta{m2 - E() * E() + p2};
 
-    arma::vec mCHt = fC * mH;
+    arma::vec::fixed<8> mCHt = fC * mH;
     double s2 = arma::dot(mH, mCHt);
 
     // protection
@@ -410,12 +432,12 @@ void Particle::AddMassConstraint(double target_mass) {
         std::println(stdout, "({}) early return has been called!", __FUNCTION__);
         std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
-        return;
+        return false;
     }
 
-    arma::vec K = mCHt / s2;  // Kalman gain
+    arma::vec::fixed<8> K = mCHt / s2;  // Kalman gain
     fP += K * zeta;
-    fC -= K * mCHt.t();      // outer product update
+    fC -= K * mCHt.t();
     fC = arma::symmatl(fC);  // force symmetry
 
     fChi2 += zeta * zeta / s2;
@@ -426,6 +448,8 @@ void Particle::AddMassConstraint(double target_mass) {
     Utils::Print(__FUNCTION__, "fC", fC);
     std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
+
+    return true;
 }
 
 // Find point of closest approach (PCA) of this particle w.r.t. an arbitrary vertex.
@@ -433,7 +457,7 @@ void Particle::AddMassConstraint(double target_mass) {
 // - `v` : arbitrary vertex
 // Return: (packed in a single `Result::Minimization` struct)
 // - `ds_dr` : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1
-Result::Minimization Particle::MinimizeLinePoint(const arma::vec& v) const {
+Result::Minimization Particle::MinimizeLinePoint(const arma::vec::fixed<3>& v) const {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
@@ -499,7 +523,7 @@ Result::Minimization Particle::MinimizeLinePoint(const arma::vec& v) const {
 // - `ds_dr`  : partial derivatives of current particle's ds w.r.t. current particle's state parameters = d(ds1)/dr1
 // - `ds_dr1` : partial derivatives of current particle's ds w.r.t. other particle's state parameters = d(ds2)/dr1, d(ds1)/dr2
 // - cache properties : dir, pca, theta, sin, cos, sB, cB
-Result::Minimization Particle::MinimizeHelixPoint(const arma::vec& v, double bz) const {
+Result::Minimization Particle::MinimizeHelixPoint(const arma::vec::fixed<3>& v, double bz) const {
 #if KF_DEBUG
     std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
@@ -536,6 +560,7 @@ Result::Minimization Particle::MinimizeHelixPoint(const arma::vec& v, double bz)
     min.ds = min.theta / bq;
     min.pca.xyz = {x0 + min.sB * px0 + min.cB * py0, y0 - min.cB * px0 + min.sB * py0, z0 + min.ds * pz0};
     min.pca.dir = {min.cos * px0 + min.sin * py0, -min.sin * px0 + min.cos * py0, pz0};
+
 #if KF_DEBUG
     Utils::PrintDouble(__FUNCTION__, "min.ds (no z-correction)", min.ds);
     Utils::Print(__FUNCTION__, "min.(x,y,z) (no z-correction)", min.pca.xyz);
@@ -579,12 +604,13 @@ Result::Minimization Particle::MinimizeHelixPoint(const arma::vec& v, double bz)
 
     // 2.a -- update derivatives //
 
-    arma::vec dc_dr = {-bq * py0 * min.cos - bbq * min.sin * bq * min.ds_dr(0) + px0 * bq * min.sin - abq * min.cos * bq * min.ds_dr(0),
-                       bq * px0 * min.cos - bbq * min.sin * bq * min.ds_dr(1) + py0 * bq * min.sin - abq * min.cos * bq * min.ds_dr(1),
-                       0.,
-                       (-bq * dy - 2. * px0) * min.cos - bbq * min.sin * bq * min.ds_dr(3) - dx * bq * min.sin - abq * min.cos * bq * min.ds_dr(3),
-                       (bq * dx - 2. * py0) * min.cos - bbq * min.sin * bq * min.ds_dr(4) - dy * bq * min.sin - abq * min.cos * bq * min.ds_dr(4),
-                       -2. * pz0};
+    arma::vec::fixed<6> dc_dr = {
+        -bq * py0 * min.cos - bbq * min.sin * bq * min.ds_dr(0) + px0 * bq * min.sin - abq * min.cos * bq * min.ds_dr(0),
+        bq * px0 * min.cos - bbq * min.sin * bq * min.ds_dr(1) + py0 * bq * min.sin - abq * min.cos * bq * min.ds_dr(1),
+        0.,
+        (-bq * dy - 2. * px0) * min.cos - bbq * min.sin * bq * min.ds_dr(3) - dx * bq * min.sin - abq * min.cos * bq * min.ds_dr(3),
+        (bq * dx - 2. * py0) * min.cos - bbq * min.sin * bq * min.ds_dr(4) - dy * bq * min.sin - abq * min.cos * bq * min.ds_dr(4),
+        -2. * pz0};
 
     min.ds_dr += pz0 * pz0 * min.ds_dr / cbq - sz / cbq * dc_dr;
     min.ds_dr(2) += pz0 / cbq;
@@ -751,7 +777,7 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
             tmp2.pca.dir = {px02, py02, pz02};
         }
 
-        arma::vec tmp_diff = tmp2.pca.xyz - tmp1.pca.xyz;
+        arma::vec::fixed<3> tmp_diff = tmp2.pca.xyz - tmp1.pca.xyz;
         double tmp_dca_sq{arma::dot(tmp_diff, tmp_diff)};
 
         // store //
@@ -775,46 +801,46 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Utils::PrintDouble(__FUNCTION__, "dx", dx);
     Utils::PrintDouble(__FUNCTION__, "dy", dy);
     Utils::PrintDouble(__FUNCTION__, "dz", dz);
-    Utils::Print(__FUNCTION__, "w_sign", w_sign);
+    Utils::PrintDouble(__FUNCTION__, "w_sign", double(w_sign));
     Utils::PrintDouble(__FUNCTION__, "dca", std::sqrt(dca_sq));
 #endif
 
     // 1.b -- handle derivatives //
 
-    arma::vec dk11dr1 = {bq2 * px01, bq2 * py01, 0., bq2 * dx0 - py02, bq2 * dy0 + px02, 0.};
-    arma::vec dk11dr2 = {-bq2 * px01, -bq2 * py01, 0., py01, -px01, 0.};
-    arma::vec dk12dr1 = {bq1 * px02, bq1 * py02, 0., -py02, px02, 0.};
-    arma::vec dk12dr2 = {-bq1 * px02, -bq1 * py02, 0., bq1 * dx0 + py01, bq1 * dy0 - px01, 0.};
-    arma::vec dk21dr1 = {
+    arma::vec::fixed<6> dk11dr1 = {bq2 * px01, bq2 * py01, 0., bq2 * dx0 - py02, bq2 * dy0 + px02, 0.};
+    arma::vec::fixed<6> dk11dr2 = {-bq2 * px01, -bq2 * py01, 0., py01, -px01, 0.};
+    arma::vec::fixed<6> dk12dr1 = {bq1 * px02, bq1 * py02, 0., -py02, px02, 0.};
+    arma::vec::fixed<6> dk12dr2 = {-bq1 * px02, -bq1 * py02, 0., bq1 * dx0 + py01, bq1 * dy0 - px01, 0.};
+    arma::vec::fixed<6> dk21dr1 = {
         bq1 * bq2 * py01, -bq1 * bq2 * px01, 0., 2. * bq2 * px01 + bq1 * (-(bq2 * dy0) - px02), 2. * bq2 * py01 + bq1 * (bq2 * dx0 - py02), 0.};
-    arma::vec dk21dr2 = {-(bq1 * bq2 * py01), bq1 * bq2 * px01, 0., -(bq1 * px01), -(bq1 * py01), 0.};
-    arma::vec dk22dr1 = {bq1 * bq2 * py02, -(bq1 * bq2 * px02), 0., bq2 * px02, bq2 * py02, 0.};
-    arma::vec dk22dr2 = {
+    arma::vec::fixed<6> dk21dr2 = {-(bq1 * bq2 * py01), bq1 * bq2 * px01, 0., -(bq1 * px01), -(bq1 * py01), 0.};
+    arma::vec::fixed<6> dk22dr1 = {bq1 * bq2 * py02, -(bq1 * bq2 * px02), 0., bq2 * px02, bq2 * py02, 0.};
+    arma::vec::fixed<6> dk22dr2 = {
         -(bq1 * bq2 * py02), bq1 * bq2 * px02, 0., bq2 * (-(bq1 * dy0) + px01) - 2. * bq1 * px02, bq2 * (bq1 * dx0 + py01) - 2. * bq1 * py02, 0.};
 
-    arma::vec dkddr1 = {
+    arma::vec::fixed<6> dkddr1 = {
         bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02, bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02, 0., -bq2 * dy0 - px02, bq2 * dx0 - py02, 0.};
-    arma::vec dkddr2 = {
+    arma::vec::fixed<6> dkddr2 = {
         -bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02, -bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02, 0., bq1 * dy0 - px01, -bq1 * dx0 - py01, 0.};
 
-    arma::vec dc1dr1 = {-(bq1 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02)), -(bq1 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02)), 0.,
-                        -2. * bq2 * px01 - bq1 * (-bq2 * dy0 - px02),         -2. * bq2 * py01 - bq1 * (bq2 * dx0 - py02),          0.};
-    arma::vec dc1dr2 = {-bq1 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02),
-                        -bq1 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02),
-                        0.,
-                        -bq1 * (bq1 * dy0 - px01),
-                        -bq1 * (-bq1 * dx0 - py01),
-                        0.};
-    arma::vec dc2dr1 = {bq2 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02),
-                        bq2 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02),
-                        0.,
-                        bq2 * (-bq2 * dy0 - px02),
-                        bq2 * (bq2 * dx0 - py02),
-                        0.};
-    arma::vec dc2dr2 = {bq2 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02), bq2 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02), 0.,
-                        bq2 * (bq1 * dy0 - px01) + 2 * bq1 * px02,          bq2 * (-(bq1 * dx0) - py01) + 2 * bq1 * py02,       0.};
-    arma::vec dd1dr1 = arma::vec(6);  // 6x1
-    arma::vec dd1dr2 = arma::vec(6);  // 6x1
+    arma::vec::fixed<6> dc1dr1 = {-(bq1 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02)), -(bq1 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02)), 0.,
+                                  -2. * bq2 * px01 - bq1 * (-bq2 * dy0 - px02),         -2. * bq2 * py01 - bq1 * (bq2 * dx0 - py02),          0.};
+    arma::vec::fixed<6> dc1dr2 = {-bq1 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02),
+                                  -bq1 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02),
+                                  0.,
+                                  -bq1 * (bq1 * dy0 - px01),
+                                  -bq1 * (-bq1 * dx0 - py01),
+                                  0.};
+    arma::vec::fixed<6> dc2dr1 = {bq2 * (bq1 * bq2 * dx0 + bq2 * py01 - bq1 * py02),
+                                  bq2 * (bq1 * bq2 * dy0 - bq2 * px01 + bq1 * px02),
+                                  0.,
+                                  bq2 * (-bq2 * dy0 - px02),
+                                  bq2 * (bq2 * dx0 - py02),
+                                  0.};
+    arma::vec::fixed<6> dc2dr2 = {bq2 * (-bq1 * bq2 * dx0 - bq2 * py01 + bq1 * py02), bq2 * (-bq1 * bq2 * dy0 + bq2 * px01 - bq1 * px02), 0.,
+                                  bq2 * (bq1 * dy0 - px01) + 2 * bq1 * px02,          bq2 * (-(bq1 * dx0) - py01) + 2 * bq1 * py02,       0.};
+    arma::vec::fixed<6> dd1dr1(arma::fill::zeros);
+    arma::vec::fixed<6> dd1dr2(arma::fill::zeros);
 
     if (d1 > 0.) {
         dd1dr1 = -kd * dkddr1 / d1;
@@ -978,10 +1004,10 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Utils::PrintDouble(__FUNCTION__, "dsl2ds1", dsl2ds1);
 #endif
 
-    arma::vec dsldr0 = dsl1ds0 * min1.ds_dr + dsl1ds1 * min2.ds_dr1;
-    arma::vec dsldr1 = dsl1ds0 * min1.ds_dr1 + dsl1ds1 * min2.ds_dr;
-    arma::vec dsldr2 = dsl2ds0 * min1.ds_dr + dsl2ds1 * min2.ds_dr1;
-    arma::vec dsldr3 = dsl2ds0 * min1.ds_dr1 + dsl2ds1 * min2.ds_dr;
+    arma::vec::fixed<6> dsldr0 = dsl1ds0 * min1.ds_dr + dsl1ds1 * min2.ds_dr1;
+    arma::vec::fixed<6> dsldr1 = dsl1ds0 * min1.ds_dr1 + dsl1ds1 * min2.ds_dr;
+    arma::vec::fixed<6> dsldr2 = dsl2ds0 * min1.ds_dr + dsl2ds1 * min2.ds_dr1;
+    arma::vec::fixed<6> dsldr3 = dsl2ds0 * min1.ds_dr1 + dsl2ds1 * min2.ds_dr;
 
     min1.ds_dr += dsldr0;
     min1.ds_dr1 += dsldr1;
@@ -995,24 +1021,24 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Utils::Print(__FUNCTION__, "min2.ds_dr (after z-correction 1)", min2.ds_dr);
 #endif
 
-    arma::vec lp1p2_dr0 = {0., 0., 0., min1.cos * px2 - py2 * min1.sin, min1.cos * py2 + px2 * min1.sin, pz02};
-    arma::vec lp1p2_dr1 = {0., 0., 0., min2.cos * px1 - py1 * min2.sin, min2.cos * py1 + px1 * min2.sin, pz01};
-    arma::vec ldrp1_dr0 = {-px1,
-                           -py1,
-                           -pz01,
-                           min1.cB * py1 - px1 * min1.sB + min1.cos * dx - min1.sin * dy,
-                           -min1.cB * px1 - py1 * min1.sB + min1.sin * dx + min1.cos * dy,
-                           -min1.ds * pz01 + dz};
-    arma::vec ldrp1_dr1 = {px1, py1, pz01, -min2.cB * py1 + px1 * min2.sB, min2.cB * px1 + py1 * min2.sB, min2.ds * pz01};
-    arma::vec ldrp2_dr0 = {-px2, -py2, -pz02, min1.cB * py2 - px2 * min1.sB, -min1.cB * px2 - py2 * min1.sB, -min1.ds * pz02};
-    arma::vec ldrp2_dr1 = {px2,
-                           py2,
-                           pz02,
-                           -min2.cB * py2 + px2 * min2.sB + min2.cos * dx - min2.sin * dy,
-                           min2.cB * px2 + py2 * min2.sB + min2.sin * dx + min2.cos * dy,
-                           dz + min2.ds * pz02};
-    arma::vec p12_dr0 = {0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
-    arma::vec p22_dr1 = {0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
+    arma::vec::fixed<6> lp1p2_dr0 = {0., 0., 0., min1.cos * px2 - py2 * min1.sin, min1.cos * py2 + px2 * min1.sin, pz02};
+    arma::vec::fixed<6> lp1p2_dr1 = {0., 0., 0., min2.cos * px1 - py1 * min2.sin, min2.cos * py1 + px1 * min2.sin, pz01};
+    arma::vec::fixed<6> ldrp1_dr0 = {-px1,
+                                     -py1,
+                                     -pz01,
+                                     min1.cB * py1 - px1 * min1.sB + min1.cos * dx - min1.sin * dy,
+                                     -min1.cB * px1 - py1 * min1.sB + min1.sin * dx + min1.cos * dy,
+                                     -min1.ds * pz01 + dz};
+    arma::vec::fixed<6> ldrp1_dr1 = {px1, py1, pz01, -min2.cB * py1 + px1 * min2.sB, min2.cB * px1 + py1 * min2.sB, min2.ds * pz01};
+    arma::vec::fixed<6> ldrp2_dr0 = {-px2, -py2, -pz02, min1.cB * py2 - px2 * min1.sB, -min1.cB * px2 - py2 * min1.sB, -min1.ds * pz02};
+    arma::vec::fixed<6> ldrp2_dr1 = {px2,
+                                     py2,
+                                     pz02,
+                                     -min2.cB * py2 + px2 * min2.sB + min2.cos * dx - min2.sin * dy,
+                                     min2.cB * px2 + py2 * min2.sB + min2.sin * dx + min2.cos * dy,
+                                     dz + min2.ds * pz02};
+    arma::vec::fixed<6> p12_dr0 = {0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
+    arma::vec::fixed<6> p22_dr1 = {0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
 
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "lp1p2_dr0", lp1p2_dr0);
@@ -1025,13 +1051,13 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeHelixHel
     Utils::Print(__FUNCTION__, "p22_dr1", p22_dr1);
 #endif
 
-    arma::vec a1_dr0 = {ldrp2_dr0 * lp1p2 + ldrp2 * lp1p2_dr0 - ldrp1_dr0 * p22};
-    arma::vec a1_dr1 = {ldrp2_dr1 * lp1p2 + ldrp2 * lp1p2_dr1 - ldrp1_dr1 * p22 - ldrp1 * p22_dr1};
-    arma::vec a2_dr0 = {ldrp2_dr0 * p12 + ldrp2 * p12_dr0 - ldrp1_dr0 * lp1p2 - ldrp1 * lp1p2_dr0};
-    arma::vec a2_dr1 = {ldrp2_dr1 * p12 - ldrp1_dr1 * lp1p2 - ldrp1 * lp1p2_dr1};
+    arma::vec::fixed<6> a1_dr0 = ldrp2_dr0 * lp1p2 + ldrp2 * lp1p2_dr0 - ldrp1_dr0 * p22;
+    arma::vec::fixed<6> a1_dr1 = ldrp2_dr1 * lp1p2 + ldrp2 * lp1p2_dr1 - ldrp1_dr1 * p22 - ldrp1 * p22_dr1;
+    arma::vec::fixed<6> a2_dr0 = ldrp2_dr0 * p12 + ldrp2 * p12_dr0 - ldrp1_dr0 * lp1p2 - ldrp1 * lp1p2_dr0;
+    arma::vec::fixed<6> a2_dr1 = ldrp2_dr1 * p12 - ldrp1_dr1 * lp1p2 - ldrp1 * lp1p2_dr1;
 
-    arma::vec detp_dr0 = {2. * lp1p2 * lp1p2_dr0 - p12_dr0 * p22};
-    arma::vec detp_dr1 = {2. * lp1p2 * lp1p2_dr1 - p12 * p22_dr1};
+    arma::vec::fixed<6> detp_dr0 = 2. * lp1p2 * lp1p2_dr0 - p12_dr0 * p22;
+    arma::vec::fixed<6> detp_dr1 = 2. * lp1p2 * lp1p2_dr1 - p12 * p22_dr1;
 
     min1.ds_dr += a1_dr0 / detp - a1 * detp_dr0 / (detp * detp);
     min1.ds_dr1 += a1_dr1 / detp - a1 * detp_dr1 / (detp * detp);
@@ -1140,41 +1166,41 @@ std::pair<Result::Minimization, Result::Minimization> Particle::MinimizeLineLine
     min2.pca.dir = {px02, py02, pz02};
 
 #if KF_DEBUG
-    Utils::Print(__FUNCTION__, "min1.ds", min1.ds);
+    Utils::PrintDouble(__FUNCTION__, "min1.ds", min1.ds);
     Utils::Print(__FUNCTION__, "min1.(x,y,z)", min1.pca.xyz);
-    Utils::Print(__FUNCTION__, "min2.ds", min2.ds);
+    Utils::PrintDouble(__FUNCTION__, "min2.ds", min2.ds);
     Utils::Print(__FUNCTION__, "min2.(x,y,z)", min2.pca.xyz);
 #endif
 
     // handle derivatives //
 
-    arma::vec drp1_dr1 = {-px01, -py01, -pz01, -x01 + x02, -y01 + y02, -z01 + z02};
-    arma::vec drp1_dr2 = {px01, py01, pz01, 0., 0., 0.};
-    arma::vec drp2_dr1 = {-px02, -py02, -pz02, 0., 0., 0.};
-    arma::vec drp2_dr2 = {px02, py02, pz02, -x01 + x02, -y01 + y02, -z01 + z02};
-    arma::vec dp1p2_dr1 = {0., 0., 0., px02, py02, pz02};
-    arma::vec dp1p2_dr2 = {0., 0., 0., px01, py01, pz01};
-    arma::vec dp12_dr1 = {0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
-    arma::vec dp12_dr2 = {0., 0., 0., 0., 0., 0.};
-    arma::vec dp22_dr1 = {0., 0., 0., 0., 0., 0.};
-    arma::vec dp22_dr2 = {0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
-    arma::vec ddetp_dr1 = {0., 0., 0., -2 * p22 * px01 + 2. * p1p2 * px02, -2 * p22 * py01 + 2. * p1p2 * py02, -2 * p22 * pz01 + 2. * p1p2 * pz02};
-    arma::vec ddetp_dr2 = {0., 0., 0., 2. * p1p2 * px01 - 2. * p12 * px02, 2. * p1p2 * py01 - 2. * p12 * py02, 2. * p1p2 * pz01 - 2. * p12 * pz02};
+    arma::vec::fixed<6> drp1_dr1 = {-px01, -py01, -pz01, -x01 + x02, -y01 + y02, -z01 + z02};
+    arma::vec::fixed<6> drp1_dr2 = {px01, py01, pz01, 0., 0., 0.};
+    arma::vec::fixed<6> drp2_dr1 = {-px02, -py02, -pz02, 0., 0., 0.};
+    arma::vec::fixed<6> drp2_dr2 = {px02, py02, pz02, -x01 + x02, -y01 + y02, -z01 + z02};
+    arma::vec::fixed<6> dp1p2_dr1 = {0., 0., 0., px02, py02, pz02};
+    arma::vec::fixed<6> dp1p2_dr2 = {0., 0., 0., px01, py01, pz01};
+    arma::vec::fixed<6> dp12_dr1 = {0., 0., 0., 2. * px01, 2. * py01, 2. * pz01};
+    arma::vec::fixed<6> dp12_dr2 = {0., 0., 0., 0., 0., 0.};
+    arma::vec::fixed<6> dp22_dr1 = {0., 0., 0., 0., 0., 0.};
+    arma::vec::fixed<6> dp22_dr2 = {0., 0., 0., 2. * px02, 2. * py02, 2. * pz02};
+    arma::vec::fixed<6> ddetp_dr1 = {
+        0., 0., 0., -2 * p22 * px01 + 2. * p1p2 * px02, -2 * p22 * py01 + 2. * p1p2 * py02, -2 * p22 * pz01 + 2. * p1p2 * pz02};
+    arma::vec::fixed<6> ddetp_dr2 = {
+        0., 0., 0., 2. * p1p2 * px01 - 2. * p12 * px02, 2. * p1p2 * py01 - 2. * p12 * py02, 2. * p1p2 * pz01 - 2. * p12 * pz02};
 
     double a1{drp2 * p1p2 - drp1 * p22};
     double a2{drp2 * p12 - drp1 * p1p2};
 
-    for (size_t i{0}; i < 6; ++i) {
-        double da1_dr1{drp2_dr1(i) * p1p2 + drp2 * dp1p2_dr1(i) - drp1_dr1(i) * p22 - drp1 * dp22_dr1(i)};
-        double da1_dr2{drp2_dr2(i) * p1p2 + drp2 * dp1p2_dr2(i) - drp1_dr2(i) * p22 - drp1 * dp22_dr2(i)};
-        double da2_dr1{drp2_dr1(i) * p12 + drp2 * dp12_dr1(i) - drp1_dr1(i) * p1p2 - drp1 * dp1p2_dr1(i)};
-        double da2_dr2{drp2_dr2(i) * p12 + drp2 * dp12_dr2(i) - drp1_dr2(i) * p1p2 - drp1 * dp1p2_dr2(i)};
+    arma::vec::fixed<6> da1_dr1 = drp2_dr1 * p1p2 + drp2 * dp1p2_dr1 - drp1_dr1 * p22 - drp1 * dp22_dr1;
+    arma::vec::fixed<6> da1_dr2 = drp2_dr2 * p1p2 + drp2 * dp1p2_dr2 - drp1_dr2 * p22 - drp1 * dp22_dr2;
+    arma::vec::fixed<6> da2_dr1 = drp2_dr1 * p12 + drp2 * dp12_dr1 - drp1_dr1 * p1p2 - drp1 * dp1p2_dr1;
+    arma::vec::fixed<6> da2_dr2 = drp2_dr2 * p12 + drp2 * dp12_dr2 - drp1_dr2 * p1p2 - drp1 * dp1p2_dr2;
 
-        min1.ds_dr(i) = da1_dr1 / detp - a1 * ddetp_dr1(i) / (detp * detp);
-        min1.ds_dr1(i) = da1_dr2 / detp - a1 * ddetp_dr2(i) / (detp * detp);
-        min2.ds_dr1(i) = da2_dr1 / detp - a2 * ddetp_dr1(i) / (detp * detp);
-        min2.ds_dr(i) = da2_dr2 / detp - a2 * ddetp_dr2(i) / (detp * detp);
-    }
+    min1.ds_dr = da1_dr1 / detp - a1 * ddetp_dr1 / (detp * detp);
+    min1.ds_dr1 = da1_dr2 / detp - a1 * ddetp_dr2 / (detp * detp);
+    min2.ds_dr1 = da2_dr1 / detp - a2 * ddetp_dr1 / (detp * detp);
+    min2.ds_dr = da2_dr2 / detp - a2 * ddetp_dr2 / (detp * detp);
 
 #if KF_DEBUG
     Utils::Print(__FUNCTION__, "min1.ds_dr", min1.ds_dr);
@@ -1220,7 +1246,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     tpr.P(6) = fP(6);
     tpr.P(7) = fP(7);
 
-    arma::mat mJ = arma::eye(8, 8);  // 8x8
+    arma::mat::fixed<8, 8> mJ(arma::fill::eye);
     mJ(0, 3) = min.sB;
     mJ(0, 4) = min.cB;
     mJ(1, 3) = -min.cB;
@@ -1231,7 +1257,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     mJ(4, 3) = -min.sin;
     mJ(4, 4) = min.cos;
 
-    arma::mat mJds = arma::mat(6, 6);  // 6x6
+    arma::mat::fixed<6, 6> mJds(arma::fill::zeros);
     mJds(0, 3) = min.cos;
     mJds(0, 4) = min.sin;
     mJds(1, 3) = -min.sin;
@@ -1242,7 +1268,7 @@ Result::Transport Particle::TransportBz(const Result::Minimization& min, double 
     mJds(4, 3) = -bq * min.cos;
     mJds(4, 4) = -bq * min.sin;
 
-    arma::vec mJds_p = mJds.col(3) * px0 + mJds.col(4) * py0 + mJds.col(5) * pz0;  // 6x1
+    arma::vec::fixed<6> mJds_p = mJds.col(3) * px0 + mJds.col(4) * py0 + mJds.col(5) * pz0;
     mJ.submat(0, 0, arma::size(6, 6)) += mJds_p * min.ds_dr.t();
 
     tpr.C = mJ * fC * mJ.t();
@@ -1278,7 +1304,7 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
 
     Result::Transport tpr{};
 
-    arma::mat mJ = arma::eye(8, 8);  // 8x8
+    arma::mat::fixed<8, 8> mJ(arma::fill::eye);
     mJ(0, 3) = min.ds;
     mJ(1, 4) = min.ds;
     mJ(2, 5) = min.ds;
@@ -1296,12 +1322,12 @@ Result::Transport Particle::TransportLine(const Result::Minimization& min) const
     tpr.P(6) = fP(6);
     tpr.P(7) = fP(7);
 
-    arma::mat mJds = arma::mat(6, 6);  // 6x6
+    arma::mat::fixed<6, 6> mJds(arma::fill::zeros);
     mJds(0, 3) = 1.;
     mJds(1, 4) = 1.;
     mJds(2, 5) = 1.;
 
-    arma::vec mJds_p = mJds.col(3) * px + mJds.col(4) * py + mJds.col(5) * pz;  // 6x1
+    arma::vec::fixed<6> mJds_p = mJds.col(3) * px + mJds.col(4) * py + mJds.col(5) * pz;
 
     mJ.submat(0, 0, arma::size(6, 6)) += mJds_p * min.ds_dr.t();
 

@@ -39,8 +39,8 @@ namespace KF {
 struct PCA {
     PCA() = default;
     PCA(double x, double y, double z, double px, double py, double pz) : xyz{x, y, z}, dir{px, py, pz} {};
-    arma::vec xyz{arma::vec(3)};  // 3x1
-    arma::vec dir{arma::vec(3)};  // 3x1
+    arma::vec::fixed<3> xyz;
+    arma::vec::fixed<3> dir;
 };
 struct Cache {
     PCA pca;
@@ -54,29 +54,29 @@ struct Cache {
 
 namespace Result {
 struct Minimization : Cache {
-    arma::vec ds_dr{arma::vec(6)};   // 6x1
-    arma::vec ds_dr1{arma::vec(6)};  // 6x1
+    arma::vec::fixed<6> ds_dr;
+    arma::vec::fixed<6> ds_dr1;
 };
 struct Transport {
-    arma::mat C{arma::mat(8, 8)};      // 8x8 symm.
-    arma::mat jacob{arma::mat(6, 6)};  // 6x6
-    arma::mat corr{arma::mat(6, 6)};   // 6x6
-    arma::vec P{arma::vec(8)};         // 8x1
+    arma::mat::fixed<8, 8> C;
+    arma::mat::fixed<6, 6> jacob;
+    arma::mat::fixed<6, 6> corr;
+    arma::vec::fixed<8> P;
 };
 struct Measurement {
-    Measurement(arma::vec p1, arma::vec p2, arma::mat c1, arma::mat c2)
-        : C1{std::move(c1)}, C2{std::move(c2)}, P1{std::move(p1)}, P2{std::move(p2)} {}
+    Measurement(const arma::vec::fixed<8> &p1, const arma::vec::fixed<8> &p2, const arma::mat::fixed<8, 8> &c1, const arma::mat::fixed<8, 8> &c2)
+        : C1{c1}, C2{c2}, P1{p1}, P2{p2} {}
 
-    arma::mat C1{arma::mat(8, 8)};  // 8x8 symm.
-    arma::mat C2{arma::mat(8, 8)};  // 8x8 symm.
-    arma::mat D{arma::mat(3, 3)};   // 3x3
-    arma::vec P1{arma::vec(8)};     // 8x1
-    arma::vec P2{arma::vec(8)};     // 8x1
+    arma::mat::fixed<8, 8> C1;
+    arma::mat::fixed<8, 8> C2;
+    arma::mat::fixed<3, 3> D;
+    arma::vec::fixed<8> P1;
+    arma::vec::fixed<8> P2;
 };
 struct MassConstraint {
-    arma::mat jacob{arma::mat(8, 8)};  // 8x8
-    arma::mat C{arma::mat(7, 7)};      // 7x7 symm.
-    arma::vec P{arma::vec(8)};         // 8x1
+    arma::mat::fixed<8, 8> jacob;
+    arma::mat::fixed<7, 7> C;
+    arma::vec::fixed<8> P;
 };
 }  // namespace Result
 
@@ -95,8 +95,8 @@ class Particle {
     Particle &operator=(Particle &&) noexcept = default;
 
     Particle() { Initialize(); }
-    Particle(const arma::vec &p, const arma::mat &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
-    Particle(const arma::vec &p, const arma::mat &cov, int charge) { Initialize(p, cov, charge); }
+    Particle(const arma::vec::fixed<6> &p, const arma::mat::fixed<6, 6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
+    Particle(const arma::vec::fixed<7> &p, const arma::mat::fixed<7, 7> &cov, int charge) { Initialize(p, cov, charge); }
     ~Particle() = default;
 
     [[nodiscard]] double X() const noexcept { return fP(0); }     // return X coordinate of the particle
@@ -141,47 +141,84 @@ class Particle {
     // Return distance of closest approach (DCA) (cm) between added daughter and fitted vertex.
     [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
-        arma::vec diff = fP.subvec(0, arma::size(3, 1)) - fPCAs[index_daughter].xyz;
+        arma::vec::fixed<3> diff = fP.head(3) - fPCAs[index_daughter].xyz;
         return arma::norm(diff);
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter1 and added daughter2.
     [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
-        arma::vec diff = fPCAs[index_daughter1].xyz - fPCAs[index_daughter2].xyz;
+        arma::vec::fixed<3> diff = fPCAs[index_daughter1].xyz - fPCAs[index_daughter2].xyz;
         return norm(diff);
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter and fitted vertex.
     [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
-        arma::vec diff = fP.subvec(0, arma::size(2, 1)) - fPCAs[index_daughter].xyz.subvec(0, arma::size(2, 1));
+        arma::vec::fixed<2> diff = fP.head(2) - fPCAs[index_daughter].xyz.head(2);
         return arma::norm(diff);
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter1 and added daughter2.
     [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
-        arma::vec diff = fPCAs[index_daughter1].xyz.subvec(0, arma::size(2, 1)) - fPCAs[index_daughter2].xyz.subvec(0, arma::size(2, 1));
+        arma::vec::fixed<2> diff = fPCAs[index_daughter1].xyz.head(2) - fPCAs[index_daughter2].xyz.head(2);
         return norm(diff);
     }
 
     [[nodiscard]] double GetParameter(size_t i) const { return fP(i); }
     [[nodiscard]] double GetCovariance(size_t i, size_t j) const { return fC(i, j); }
 
-    void AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
-    void AddDaughter(const Particle &daughter, double bz) {
+    [[nodiscard]] double SigmaX2() const { return fC(0, 0); }
+    [[nodiscard]] double SigmaXY() const { return fC(1, 0); }
+    [[nodiscard]] double SigmaY2() const { return fC(1, 1); }
+    [[nodiscard]] double SigmaXZ() const { return fC(2, 0); }
+    [[nodiscard]] double SigmaYZ() const { return fC(2, 1); }
+    [[nodiscard]] double SigmaZ2() const { return fC(2, 2); }
+    [[nodiscard]] double SigmaXPx() const { return fC(3, 0); }
+    [[nodiscard]] double SigmaYPx() const { return fC(3, 1); }
+    [[nodiscard]] double SigmaZPx() const { return fC(3, 2); }
+    [[nodiscard]] double SigmaPx2() const { return fC(3, 3); }
+    [[nodiscard]] double SigmaXPy() const { return fC(4, 0); }
+    [[nodiscard]] double SigmaYPy() const { return fC(4, 1); }
+    [[nodiscard]] double SigmaZPy() const { return fC(4, 2); }
+    [[nodiscard]] double SigmaPxPy() const { return fC(4, 3); }
+    [[nodiscard]] double SigmaPy2() const { return fC(4, 4); }
+    [[nodiscard]] double SigmaXPz() const { return fC(5, 0); }
+    [[nodiscard]] double SigmaYPz() const { return fC(5, 1); }
+    [[nodiscard]] double SigmaZPz() const { return fC(5, 2); }
+    [[nodiscard]] double SigmaPxPz() const { return fC(5, 3); }
+    [[nodiscard]] double SigmaPyPz() const { return fC(5, 4); }
+    [[nodiscard]] double SigmaPz2() const { return fC(5, 5); }
+    [[nodiscard]] double SigmaXE() const { return fC(6, 0); }
+    [[nodiscard]] double SigmaYE() const { return fC(6, 1); }
+    [[nodiscard]] double SigmaZE() const { return fC(6, 2); }
+    [[nodiscard]] double SigmaPxE() const { return fC(6, 3); }
+    [[nodiscard]] double SigmaPyE() const { return fC(6, 4); }
+    [[nodiscard]] double SigmaPzE() const { return fC(6, 5); }
+    [[nodiscard]] double SigmaE2() const { return fC(6, 6); }
+    [[nodiscard]] double SigmaXS() const { return fC(7, 0); }
+    [[nodiscard]] double SigmaYS() const { return fC(7, 1); }
+    [[nodiscard]] double SigmaZS() const { return fC(7, 2); }
+    [[nodiscard]] double SigmaPxS() const { return fC(7, 3); }
+    [[nodiscard]] double SigmaPyS() const { return fC(7, 4); }
+    [[nodiscard]] double SigmaPzS() const { return fC(7, 5); }
+    [[nodiscard]] double SigmaES() const { return fC(7, 6); }
+    [[nodiscard]] double SigmaS2() const { return fC(7, 7); }
+
+    bool AddDaughterWithEnergyFit(const Particle &daughter, double bz, double chi2_threshold = 1E4);
+    bool AddDaughter(const Particle &daughter, double bz) {
         if (fNDF < -1) {  // first daughter -> just copy
             fP = daughter.fP;
             fC = daughter.fC;
             fQ = daughter.Charge();
             fNDF += 2;
-            return;
+            return true;
         }
-        AddDaughterWithEnergyFit(daughter, bz);
+        return AddDaughterWithEnergyFit(daughter, bz);
     }
-    void AddProductionVertex(const arma::vec &prod_vtx, const arma::mat &cov, double bz, double chi2_threshold = 1E4);
-    void AddMassConstraint(double target_mass);
+    bool AddProductionVertex(const arma::vec::fixed<3> &prod_vtx, const arma::mat::fixed<3, 3> &cov, double bz, double chi2_threshold = 1E4);
+    bool AddMassConstraint(double target_mass);
 
     void Print() const {
         std::println(stdout, "(X,Y,Z,S)    = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[0], fP[1], fP[2], fP[7]);
@@ -212,12 +249,12 @@ class Particle {
     // - `charge` : charge of the particle in elementary charge units
     // - `mass`   : the mass hypothesis
     // Note: it will modify the state of the current `KF::Particle`
-    void Initialize(const arma::vec &param, const arma::mat &cov, int charge, double mass) {
+    void Initialize(const arma::vec::fixed<6> &param, const arma::mat::fixed<6, 6> &cov, int charge, double mass) {
 #if KF_DEBUG
         std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
-        for (size_t i{0}; i < 6; ++i) fP(i) = param(i);
+        fP.head(6) = param;
         double momentum{std::hypot(fP(3), fP(4), fP(5))};
         double energy{std::hypot(mass, momentum)};
         fP(6) = energy;
@@ -253,14 +290,14 @@ class Particle {
     // - `cov`    : lower-triangular part of the symmetric 7x7 covariance matrix
     // - `charge` : charge of the particle in elementary charge units
     // Note: it will modify the state of the current `KF::Particle`
-    void Initialize(const arma::vec &param, const arma::mat &cov, int charge) {
+    void Initialize(const arma::vec::fixed<7> &param, const arma::mat::fixed<7, 7> &cov, int charge) {
 #if KF_DEBUG
         std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
-        fP = param;
+        fP.head(7) = param;
         fP(7) = 0.;
 
-        fC = cov;
+        fC.submat(0, 0, arma::size(7, 7)) = cov;
         fC(7, 7) = 1.;
 
         fQ = charge;
@@ -271,9 +308,9 @@ class Particle {
 
     [[nodiscard]] Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
-    [[nodiscard]] Result::Minimization MinimizeLinePoint(const arma::vec &v) const;
-    [[nodiscard]] Result::Minimization MinimizeHelixPoint(const arma::vec &v, double bz) const;
-    [[nodiscard]] Result::Minimization Minimize(const arma::vec &v, double bz = 0) const {
+    [[nodiscard]] Result::Minimization MinimizeLinePoint(const arma::vec::fixed<3> &v) const;
+    [[nodiscard]] Result::Minimization MinimizeHelixPoint(const arma::vec::fixed<3> &v, double bz) const;
+    [[nodiscard]] Result::Minimization Minimize(const arma::vec::fixed<3> &v, double bz = 0) const {
         if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
             return MinimizeLinePoint(v);
         }
@@ -298,7 +335,7 @@ class Particle {
         return TransportBz(min, bz);
     }
 
-    arma::mat fC = arma::mat(8, 8);  // symmetric 8x8 covariance matrix
+    arma::mat::fixed<8, 8> fC;  // symmetric 8x8 covariance matrix
 
     // Registered Points of Closest Approach (PCAs).
     // 0) If there's no or a single daughter has been added <-> no fitted vertex => size = 0
@@ -306,10 +343,10 @@ class Particle {
     // 2) After that, for any additional daughter or production vertex => size += 1
     std::vector<PCA> fPCAs;
 
-    arma::vec fP = arma::vec(8);  // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
-    double fChi2{0.};             // chi2
-    int fNDF{-3};                 // number of degrees of freedom
-    int fQ{0};                    // charge of the particle in units of elementary charge
+    arma::vec::fixed<8> fP;  // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
+    double fChi2{0.};        // chi2
+    int fNDF{-3};            // number of degrees of freedom
+    int fQ{0};               // charge of the particle in units of elementary charge
 };
 
 }  // namespace KF

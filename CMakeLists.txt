@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25...3.31)
 project(
   KFParticle
-  VERSION 26.1.28
+  VERSION 26.1.29-arma
   LANGUAGES CXX)
 
 # prevent in-source builds #
@@ -57,12 +57,21 @@ target_include_directories(
 target_link_libraries(${PROJECT_NAME} PRIVATE ${ARMADILLO_LIBRARIES})
 
 target_compile_options(
-  ${PROJECT_NAME} PRIVATE -Wall -Wextra -Wshadow -Wnon-virtual-dtor -Wpedantic
-                          -Wconversion)
+  ${PROJECT_NAME}
+  PRIVATE -Wall
+          -Wextra
+          -Wshadow
+          -Wnon-virtual-dtor
+          -Wpedantic
+          -Wconversion
+          $<$<CONFIG:Release>:-mtune=native
+          -march=native>)
 
 # set KF_DEBUG #
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC $<$<CONFIG:Debug>:KF_DEBUG>)
+target_compile_definitions(
+  ${PROJECT_NAME} PUBLIC $<$<CONFIG:Release>:ARMA_DONT_USE_WRAPPER
+                         ARMA_WARN_LEVEL=1> $<$<CONFIG:Debug>:KF_DEBUG>)
 
 # installation of library and headers #
 
