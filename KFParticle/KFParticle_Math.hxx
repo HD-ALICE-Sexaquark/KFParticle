@@ -3,8 +3,6 @@
 #include <cmath>
 #include <utility>
 
-#include <armadillo>
-
 namespace KF::Math {
 
 // Based on https://stackoverflow.com/a/64247207

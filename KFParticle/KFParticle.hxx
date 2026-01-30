@@ -29,20 +29,29 @@
 #include <utility>
 #include <vector>
 
-#include <armadillo>
+#include "CLA.hxx"
 
 #include "KFParticle_Const.hxx"
-#include "KFParticle_Utils.hxx"
 
 namespace KF {
 
-struct PCA {
+namespace Utils {
+[[maybe_unused]] static void PrintDouble(std::string_view fcn_name, std::string_view name, double val) {
+    std::println(stdout, "({}) {} = {:13.6e}", fcn_name, name, val);
+}
+template <class S>
+static void Print(std::string_view fcn_name, std::string_view name, const S &obj) {
+    std::println(stdout, "({}) {} = {}", fcn_name, name, obj);
+}
+}  // namespace Utils
+
+struct alignas(CLA_SIMD_ALIGN) PCA {
     PCA() = default;
-    PCA(double x, double y, double z, double px, double py, double pz) : xyz{x, y, z}, dir{px, py, pz} {};
-    arma::vec::fixed<3> xyz;
-    arma::vec::fixed<3> dir;
+    explicit PCA(const CompactLinearAlgebra::Vector<6> &p) : xyz{p.GetSlice<3>()}, dir{p.GetSlice<3, 3>()} {}
+    CompactLinearAlgebra::Vector<3> xyz{};
+    CompactLinearAlgebra::Vector<3> dir{};
 };
-struct Cache {
+struct alignas(CLA_SIMD_ALIGN) Cache {
     PCA pca;
     double theta{0.};
     double sin{0.};
@@ -53,30 +62,31 @@ struct Cache {
 };
 
 namespace Result {
-struct Minimization : Cache {
-    arma::vec::fixed<6> ds_dr;
-    arma::vec::fixed<6> ds_dr1;
+struct alignas(CLA_SIMD_ALIGN) Minimization : Cache {
+    CompactLinearAlgebra::Vector<6> ds_dr{};
+    CompactLinearAlgebra::Vector<6> ds_dr1{};
 };
-struct Transport {
-    arma::mat::fixed<8, 8> C;
-    arma::mat::fixed<6, 6> jacob;
-    arma::mat::fixed<6, 6> corr;
-    arma::vec::fixed<8> P;
+struct alignas(CLA_SIMD_ALIGN) Transport {
+    CompactLinearAlgebra::Matrix<6, 6> jacob{};
+    CompactLinearAlgebra::Matrix<6, 6> corr{};
+    CompactLinearAlgebra::SymMatrix<8> C{};
+    CompactLinearAlgebra::Vector<8> P{};
 };
-struct Measurement {
-    Measurement(const arma::vec::fixed<8> &p1, const arma::vec::fixed<8> &p2, const arma::mat::fixed<8, 8> &c1, const arma::mat::fixed<8, 8> &c2)
+struct alignas(CLA_SIMD_ALIGN) Measurement {
+    Measurement(const CompactLinearAlgebra::Vector<8> &p1, const CompactLinearAlgebra::Vector<8> &p2, const CompactLinearAlgebra::SymMatrix<8> &c1,
+                const CompactLinearAlgebra::SymMatrix<8> &c2)
         : C1{c1}, C2{c2}, P1{p1}, P2{p2} {}
 
-    arma::mat::fixed<8, 8> C1;
-    arma::mat::fixed<8, 8> C2;
-    arma::mat::fixed<3, 3> D;
-    arma::vec::fixed<8> P1;
-    arma::vec::fixed<8> P2;
+    CompactLinearAlgebra::SymMatrix<8> C1{};
+    CompactLinearAlgebra::SymMatrix<8> C2{};
+    CompactLinearAlgebra::Matrix<3, 3> D{};
+    CompactLinearAlgebra::Vector<8> P1{};
+    CompactLinearAlgebra::Vector<8> P2{};
 };
-struct MassConstraint {
-    arma::mat::fixed<8, 8> jacob;
-    arma::mat::fixed<7, 7> C;
-    arma::vec::fixed<8> P;
+struct alignas(CLA_SIMD_ALIGN) MassConstraint {
+    CompactLinearAlgebra::Matrix<7, 7> jacob{};
+    CompactLinearAlgebra::SymMatrix<8> C{};
+    CompactLinearAlgebra::Vector<8> P{};
 };
 }  // namespace Result
 
@@ -95,8 +105,10 @@ class Particle {
     Particle &operator=(Particle &&) noexcept = default;
 
     Particle() { Initialize(); }
-    Particle(const arma::vec::fixed<6> &p, const arma::mat::fixed<6, 6> &cov, int charge, double mass) { Initialize(p, cov, charge, mass); }
-    Particle(const arma::vec::fixed<7> &p, const arma::mat::fixed<7, 7> &cov, int charge) { Initialize(p, cov, charge); }
+    Particle(const CompactLinearAlgebra::Vector<6> &p, const CompactLinearAlgebra::SymMatrix<6> &cov, int charge, double mass) {
+        Initialize(p, cov, charge, mass);
+    }
+    Particle(const CompactLinearAlgebra::Vector<7> &p, const CompactLinearAlgebra::SymMatrix<7> &cov, int charge) { Initialize(p, cov, charge); }
     ~Particle() = default;
 
     [[nodiscard]] double X() const noexcept { return fP(0); }     // return X coordinate of the particle
@@ -111,9 +123,9 @@ class Particle {
     [[nodiscard]] int NDF() const noexcept { return fNDF; }       // return number of degrees of freedom
     [[nodiscard]] int Charge() const noexcept { return fQ; }      // return charge of the particle
 
-    [[nodiscard]] double Chi2NDF() const { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
-    [[nodiscard]] double P() const { return std::hypot(Px(), Py(), Pz()); }
-    [[nodiscard]] double Pt() const { return std::hypot(Px(), Py()); }
+    [[nodiscard]] double Chi2NDF() const noexcept { return fChi2 / static_cast<double>(fNDF); }  // return Chi2/ndf
+    [[nodiscard]] double P() const noexcept { return std::hypot(Px(), Py(), Pz()); }
+    [[nodiscard]] double Pt() const noexcept { return std::hypot(Px(), Py()); }
     [[nodiscard]] std::optional<double> Mass() const {
         double m_squared{(E() - P()) * (E() + P())};
         if (m_squared < 0.) return std::nullopt;  // protection
@@ -133,37 +145,37 @@ class Particle {
     [[nodiscard]] double Radius3D() const { return std::hypot(X(), Y(), Z()); }
 
     // Return point of closest approach (PCA) of a certain daughter after minimization.
-    [[nodiscard]] PCA GetPCA(size_t index_daughter) const {
-        if (fPCAs.size() <= index_daughter) return {0., 0., 0., 0., 0., 0.};  // protection
+    [[nodiscard]] std::optional<PCA> GetPCA(size_t index_daughter) const {
+        if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
         return fPCAs[index_daughter];
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter and fitted vertex.
     [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
-        arma::vec::fixed<3> diff = fP.head(3) - fPCAs[index_daughter].xyz;
-        return arma::norm(diff);
+        CompactLinearAlgebra::Vector<3> diff = fP.GetSlice<3>() - fPCAs[index_daughter].xyz;
+        return diff.Norm();
     }
 
     // Return distance of closest approach (DCA) (cm) between added daughter1 and added daughter2.
     [[nodiscard]] std::optional<double> GetDCA(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
-        arma::vec::fixed<3> diff = fPCAs[index_daughter1].xyz - fPCAs[index_daughter2].xyz;
-        return norm(diff);
+        CompactLinearAlgebra::Vector<3> diff = fPCAs[index_daughter1].xyz - fPCAs[index_daughter2].xyz;
+        return diff.Norm();
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter and fitted vertex.
     [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter) const {
         if (fPCAs.size() <= index_daughter) return std::nullopt;  // protection
-        arma::vec::fixed<2> diff = fP.head(2) - fPCAs[index_daughter].xyz.head(2);
-        return arma::norm(diff);
+        CompactLinearAlgebra::Vector<2> diff = fP.GetSlice<2>() - fPCAs[index_daughter].xyz.GetSlice<2>();
+        return diff.Norm();
     }
 
     // Return distance of closest approach (DCA) (cm) in XY plane between added daughter1 and added daughter2.
     [[nodiscard]] std::optional<double> GetDCAxy(size_t index_daughter1, size_t index_daughter2) const {
         if (fPCAs.size() <= index_daughter1 || fPCAs.size() <= index_daughter2) return std::nullopt;  // protection
-        arma::vec::fixed<2> diff = fPCAs[index_daughter1].xyz.head(2) - fPCAs[index_daughter2].xyz.head(2);
-        return norm(diff);
+        CompactLinearAlgebra::Vector<2> diff = fPCAs[index_daughter1].xyz.GetSlice<2>() - fPCAs[index_daughter2].xyz.GetSlice<2>();
+        return diff.Norm();
     }
 
     [[nodiscard]] double GetParameter(size_t i) const { return fP(i); }
@@ -217,29 +229,30 @@ class Particle {
         }
         return AddDaughterWithEnergyFit(daughter, bz);
     }
-    bool AddProductionVertex(const arma::vec::fixed<3> &prod_vtx, const arma::mat::fixed<3, 3> &cov, double bz, double chi2_threshold = 1E4);
+    bool AddProductionVertex(const CompactLinearAlgebra::Vector<3> &prod_vtx, const CompactLinearAlgebra::SymMatrix<3> &cov, double bz,
+                             double chi2_threshold = 1E4);
     bool AddMassConstraint(double target_mass);
 
     void Print() const {
-        std::println(stdout, "(X,Y,Z,S)    = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[0], fP[1], fP[2], fP[7]);
-        std::println(stdout, "(Px,Py,Pz,E) = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP[3], fP[4], fP[5], fP[6]);
-        std::println(stdout, "Mass         = {:13.6e}", (*Mass()));
+        std::println(stdout, "(X,Y,Z,S)    = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP(0), fP(1), fP(2), fP(7));
+        std::println(stdout, "(Px,Py,Pz,E) = ({:13.6e}, {:13.6e}, {:13.6e}, {:13.6e})", fP(3), fP(4), fP(5), fP(6));
+        std::println(stdout, "Mass         = {:13.6e}", Mass().value_or(Const::DummyInt));
         std::println(stdout, "Radius2D     = {:13.6e}", Radius2D());
         std::println(stdout, "Chi2/NDF     = {:13.6e} / {} = {:13.6e}", fChi2, fNDF, Chi2NDF());
-        fC.print("CovMatrix    =");
-        std::println(stdout, "DCAxy_Dau    = {:13.6e}", (*GetDCAxy(0, 1)));
-        std::println(stdout, "DCAxy_Neg    = {:13.6e}", (*GetDCAxy(0)));
-        std::println(stdout, "DCAxy_Pos    = {:13.6e}", (*GetDCAxy(1)));
+        std::println(stdout, "CovMatrix    = {}", fC);
+        std::println(stdout, "DCAxy_Dau    = {:13.6e}", GetDCAxy(0, 1).value_or(Const::DummyInt));
+        std::println(stdout, "DCAxy_Neg    = {:13.6e}", GetDCAxy(0).value_or(Const::DummyInt));
+        std::println(stdout, "DCAxy_Pos    = {:13.6e}", GetDCAxy(1).value_or(Const::DummyInt));
     }
 
    protected:
     // Set Cxx=Cyy=Czz=100 and Css=1
     // Note: it will modify the state of the current `KF::Particle`
     void Initialize() {
-        fC(0, 0) = Const::Initial_C_xx;
-        fC(1, 1) = Const::Initial_C_yy;
-        fC(2, 2) = Const::Initial_C_zz;
-        fC(7, 7) = Const::Initial_C_SS;
+        fC(0, 0) = Const::Initial_Cxx;
+        fC(1, 1) = Const::Initial_Cyy;
+        fC(2, 2) = Const::Initial_Czz;
+        fC(7, 7) = Const::Initial_Css;
     }
 
     // Set the parameters of the particle:
@@ -249,12 +262,12 @@ class Particle {
     // - `charge` : charge of the particle in elementary charge units
     // - `mass`   : the mass hypothesis
     // Note: it will modify the state of the current `KF::Particle`
-    void Initialize(const arma::vec::fixed<6> &param, const arma::mat::fixed<6, 6> &cov, int charge, double mass) {
+    void Initialize(const CompactLinearAlgebra::Vector<6> &param, const CompactLinearAlgebra::SymMatrix<6> &cov, int charge, double mass) {
 #if KF_DEBUG
         std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
 
-        fP.head(6) = param;
+        fP.SetSlice<6>(param);
         double momentum{std::hypot(fP(3), fP(4), fP(5))};
         double energy{std::hypot(mass, momentum)};
         fP(6) = energy;
@@ -264,7 +277,7 @@ class Particle {
         double h1{fP(4) / energy};
         double h2{fP(5) / energy};
 
-        fC.submat(0, 0, arma::size(6, 6)) = cov;
+        fC.SetSymSlice<6>(cov);
         fC(6, 0) = h0 * fC(3, 0) + h1 * fC(4, 0) + h2 * fC(5, 0);
         fC(6, 1) = h0 * fC(3, 1) + h1 * fC(4, 1) + h2 * fC(5, 1);
         fC(6, 2) = h0 * fC(3, 2) + h1 * fC(4, 2) + h2 * fC(5, 2);
@@ -274,7 +287,6 @@ class Particle {
         fC(6, 6) = (h0 * h0 * fC(3, 3) + h1 * h1 * fC(4, 4) + h2 * h2 * fC(5, 5) +  //
                     2 * (h0 * h1 * fC(4, 3) + h0 * h2 * fC(5, 3) + h1 * h2 * fC(5, 4)));
         fC(7, 7) = 1.;
-        fC = arma::symmatl(fC);  // force symmetry
 
         fQ = charge;
 
@@ -290,17 +302,19 @@ class Particle {
     // - `cov`    : lower-triangular part of the symmetric 7x7 covariance matrix
     // - `charge` : charge of the particle in elementary charge units
     // Note: it will modify the state of the current `KF::Particle`
-    void Initialize(const arma::vec::fixed<7> &param, const arma::mat::fixed<7, 7> &cov, int charge) {
+    void Initialize(const CompactLinearAlgebra::Vector<7> &param, const CompactLinearAlgebra::SymMatrix<7> &cov, int charge) {
 #if KF_DEBUG
         std::println(stdout, "-- starting ({}) --", __FUNCTION__);
 #endif
-        fP.head(7) = param;
+
+        fP.SetSlice<7>(param);
         fP(7) = 0.;
 
-        fC.submat(0, 0, arma::size(7, 7)) = cov;
+        fC.SetSymSlice<7>(cov);
         fC(7, 7) = 1.;
 
         fQ = charge;
+
 #if KF_DEBUG
         std::println(stdout, "-- finished ({}) --", __FUNCTION__);
 #endif
@@ -308,9 +322,9 @@ class Particle {
 
     [[nodiscard]] Result::Measurement GetMeasurement(const Particle &daughter, double bz) const;
 
-    [[nodiscard]] Result::Minimization MinimizeLinePoint(const arma::vec::fixed<3> &v) const;
-    [[nodiscard]] Result::Minimization MinimizeHelixPoint(const arma::vec::fixed<3> &v, double bz) const;
-    [[nodiscard]] Result::Minimization Minimize(const arma::vec::fixed<3> &v, double bz = 0) const {
+    [[nodiscard]] Result::Minimization MinimizeLinePoint(const CompactLinearAlgebra::Vector<3> &v) const;
+    [[nodiscard]] Result::Minimization MinimizeHelixPoint(const CompactLinearAlgebra::Vector<3> &v, double bz) const;
+    [[nodiscard]] Result::Minimization Minimize(const CompactLinearAlgebra::Vector<3> &v, double bz = 0) const {
         if (std::abs(fQ) < Const::AbsAlmostZero || std::abs(bz) < Const::AbsAlmostZero) {
             return MinimizeLinePoint(v);
         }
@@ -335,7 +349,7 @@ class Particle {
         return TransportBz(min, bz);
     }
 
-    arma::mat::fixed<8, 8> fC;  // symmetric 8x8 covariance matrix
+    CompactLinearAlgebra::SymMatrix<8> fC{};  // symmetric 8x8 covariance matrix
 
     // Registered Points of Closest Approach (PCAs).
     // 0) If there's no or a single daughter has been added <-> no fitted vertex => size = 0
@@ -343,10 +357,10 @@ class Particle {
     // 2) After that, for any additional daughter or production vertex => size += 1
     std::vector<PCA> fPCAs;
 
-    arma::vec::fixed<8> fP;  // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
-    double fChi2{0.};        // chi2
-    int fNDF{-3};            // number of degrees of freedom
-    int fQ{0};               // charge of the particle in units of elementary charge
+    CompactLinearAlgebra::Vector<8> fP{};  // particle parameters { X, Y, Z, Px, Py, Pz, E, S[=DecayLength/P]}
+    double fChi2{0.};                      // chi2
+    int fNDF{-3};                          // number of degrees of freedom
+    int fQ{0};                             // charge of the particle in units of elementary charge
 };
 
 }  // namespace KF

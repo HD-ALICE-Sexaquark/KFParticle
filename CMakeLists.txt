@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.25...3.31)
 project(
   KFParticle
-  VERSION 26.1.29-arma
+  VERSION 26.1.30
   LANGUAGES CXX)
 
 # prevent in-source builds #
@@ -36,12 +36,8 @@ endif()
 # some definitions #
 
 set(SOURCES KFParticle/KFParticle.cxx)
-set(HEADERS KFParticle/KFParticle.hxx KFParticle/KFParticle_Math.hxx
-            KFParticle/KFParticle_Const.hxx KFParticle/KFParticle_Utils.hxx)
-
-# find dependency #
-
-find_package(Armadillo REQUIRED CONFIG)
+set(HEADERS KFParticle/CLA.hxx KFParticle/KFParticle.hxx
+            KFParticle/KFParticle_Math.hxx KFParticle/KFParticle_Const.hxx)
 
 # main target #
 
@@ -49,12 +45,9 @@ add_library(${PROJECT_NAME} SHARED ${SOURCES})
 
 target_include_directories(
   ${PROJECT_NAME}
-  PRIVATE ${ARMADILLO_INCLUDE_DIRS}
-          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+  PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
           $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/KFParticle>
           $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-
-target_link_libraries(${PROJECT_NAME} PRIVATE ${ARMADILLO_LIBRARIES})
 
 target_compile_options(
   ${PROJECT_NAME}
@@ -69,9 +62,7 @@ target_compile_options(
 
 # set KF_DEBUG #
 
-target_compile_definitions(
-  ${PROJECT_NAME} PUBLIC $<$<CONFIG:Release>:ARMA_DONT_USE_WRAPPER
-                         ARMA_WARN_LEVEL=1> $<$<CONFIG:Debug>:KF_DEBUG>)
+target_compile_definitions(${PROJECT_NAME} PUBLIC $<$<CONFIG:Debug>:KF_DEBUG>)
 
 # installation of library and headers #
 

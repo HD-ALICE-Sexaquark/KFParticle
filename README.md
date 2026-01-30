@@ -9,12 +9,12 @@ A fork of [**KFParticle**](https://github.com/alisw/KFParticle), with:
 - formatted with `.clang-format` and `.clang-tidy`
 - improved code readability, more comments
 - upgraded CMake instructions
+- no third-party library dependencies
 
 ## Requirements
 
 - CMake (v3.25 or higher)
 - C++ compiler compatible with C++23
-- [**Armadillo**](https://arma.sourceforge.net/)
 
 ## Build
 
@@ -33,7 +33,6 @@ Using `g++`:
 cd KFParticleTest/
 g++ KFParticleTest.cxx -std=c++23 <additional-compiler-flags> \
                        -I<install-dir>/include -L<install-dir>/lib -lKFParticle \
-                       -I<armadillo-dir>/include -L<armadillo-dir>/lib -larmadillo \
                        -o Test
 ./Test # output should be equivalent to KFParticleTest/test.txt
 ```
